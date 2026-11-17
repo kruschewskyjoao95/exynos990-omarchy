@@ -44,5 +44,5 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 - [x] 17/11/2026: sem rootfs Debian completo. Teste em RAM com initramfs slim → Arch ARM mínimo gravado → Omarchy via `pacman`. Ver `roadmap/00`.
 - [x] 17/11/2026: LineageOS 24.0 foi instalado pelo proprietário com ajuda do Gemini.
 
-- [ ] Backup de `efs`/`sec_efs` (IMEI): sem `adb root` não há cópia, e o firmware stock não restaura essas partições. Opções: obter root para copiar antes do primeiro flash, ou aceitar o risco por escrito. O port não grava essas partições (`sources/port/tools/restore-stock.sh`, lista de nunca gravar).
+- [x] 17/11/2026: backup de `efs`, `sec_efs`, `cpefs`, `param`, `persistent`, `dtbo`, `boot` e `recovery` feito pelo claude via adb root do LineageOS Recovery, só leitura; hash e tamanho de cada imagem iguais ao aparelho. Em `backups/` (fora do git, somente leitura), hashes em `backups/stock-backup-verify.txt`. Falta o proprietário guardar uma cópia fora do computador.
 - Escrita no telefone segue a regra 5 de [AGENTS.md](AGENTS.md#trabalho-com-mais-de-um-agente).
