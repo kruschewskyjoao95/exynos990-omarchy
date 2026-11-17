@@ -2,6 +2,8 @@
 
 Side-by-side Mesa `26.3.0-devel` (`Panfrost` + `PanVK` Valhall v9 / Mali-G77) recipe for Samsung Galaxy S20 FE (`SM-G780F` / `r8s` / Exynos 990), installed under `/opt/mesa-g77`.
 
+**Runtime dependency correction (2026-11-17):** inspection with `readelf -d` of the built `pkgrel=1` found `libSPIRV-Tools.so` in both `libgallium` and `libvulkan_panfrost` dependencies. `pkgrel=2` adds `spirv-tools` to `depends` (it was only a build dependency). The existing `-1-aarch64.pkg.tar.xz` does not contain this metadata correction; regenerate the package before using it for installation. This is ELF inspection on the computer, not a GPU test.
+
 ## 1. Source & Patch Verification
 
 - **Base tree:** [`sources/mesa`](../../sources/mesa) at commit `7d6bb09d5b59ec5af1a58971f34390a62943bfe0` (`VERSION`: `26.3.0-devel`).

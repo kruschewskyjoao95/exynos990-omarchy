@@ -59,6 +59,8 @@ Fontes e receitas de M1 podem avançar enquanto M0 depende do aparelho. A análi
 
 ## M2 — Reproduzir o Linux básico no aparelho
 
+**Preparação offline adicional (17/11/2026, codex):** empacotamento agora rejeita kernel/DTB/módulos com hash divergente e slim sem registro de procedência ou de outro build, mesmo com release igual. O slim deve ser regenerado pela receita para produzir `initramfs-slim.kernel.sha256`; nenhum registro foi retroativamente criado para os artefatos atuais. Inspeção ELF do pacote Mesa existente encontrou dependência runtime `libSPIRV-Tools.so`; receita corrigida (`pkgrel=2`, `depends=spirv-tools`), pacote `pkgrel=1` ainda precisa ser regenerado. Testes de build: 17/17; instalador: 6/6; flash simulado: 18/18; integridade dos artefatos existentes: 55/55. Isso não conclui o build integral da série nem os testes físicos.
+
 - [ ] Preparar lk3rd pelo procedimento compatível com o estado inventariado em M0.
 - [ ] Após essa preparação, testar kernel e initramfs em RAM; confirmar que esse teste não monta armazenamento em escrita. Instalar lk3rd anteriormente já é uma alteração persistente.
 - [ ] Recolher logs de boot e testar console de recuperação antes de instalar o rootfs.

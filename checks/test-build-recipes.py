@@ -117,6 +117,57 @@ esac
         self.put("packaging/kernel-patches/series", "# no patches\n\n")
         self.assertNotEqual(self.run_recipe(patchset="series").returncode, 0)
 
+    def prepare_package_fixture(self):
+        self.put("bin/rsync", '''#!/usr/bin/env python3
+import shutil, sys
+shutil.copytree(sys.argv[-2], sys.argv[-1], dirs_exist_ok=True)
+''', True)
+        self.assertEqual(self.run_recipe().returncode, 0)
+        self.put("blobs/slk-stock.dtb", "stock")
+        self.put("out/boot/initramfs-slim.cpio.gz", "slim")
+        slim = self.root / "out/boot/initramfs-slim.cpio.gz"
+        self.put("out/boot/initramfs-slim.sha256",
+                 f"{hashlib.sha256(slim.read_bytes()).hexdigest()}  {slim}\n")
+        self.put("out/boot/initramfs-slim.kernel.sha256",
+                 (self.root / "out/boot/kernel.sha256").read_text())
+        self.put("sources/uniLoader/blob/fixture", "loader")
+        # A sentinel stops before compilation; reaching it proves preflight passed.
+        self.put("bin/rsync", '#!/bin/sh\nexit 77\n', True)
+
+    def test_matching_package_inputs_reach_loader_build(self):
+        self.prepare_package_fixture()
+        self.assertEqual(self.run_recipe(mode="package").returncode, 77)
+
+    def test_corrupt_kernel_inputs_rejected_before_loader_build(self):
+        for name in ("out/boot/Image", "out/boot/exynos990-r8s.dtb",
+                     "out/modules-fixture-r8s.tar.gz"):
+            with self.subTest(input=name):
+                self.prepare_package_fixture()
+                self.put(name, "changed")
+                result = self.run_recipe(mode="package")
+                self.assertNotIn(result.returncode, (0, 77), result.stdout + result.stderr)
+
+    def test_stale_slim_with_same_release_rejected(self):
+        self.prepare_package_fixture()
+        self.put("out/boot/initramfs-slim.kernel.sha256", "previous-build-same-release")
+        result = self.run_recipe(mode="package")
+        self.assertNotIn(result.returncode, (0, 77), result.stdout + result.stderr)
+
+    def test_missing_slim_provenance_rejected(self):
+        self.prepare_package_fixture()
+        (self.root / "out/boot/initramfs-slim.kernel.sha256").unlink()
+        self.assertNotIn(self.run_recipe(mode="package").returncode, (0, 77))
+
+    def test_corrupt_slim_rejected(self):
+        self.prepare_package_fixture()
+        self.put("out/boot/initramfs-slim.cpio.gz", "corrupt")
+        self.assertNotIn(self.run_recipe(mode="package").returncode, (0, 77))
+
+    def test_missing_stock_dtb_rejected(self):
+        self.prepare_package_fixture()
+        (self.root / "blobs/slk-stock.dtb").unlink()
+        self.assertNotIn(self.run_recipe(mode="package").returncode, (0, 77))
+
     def prepare_arch_fixture(self):
         for name in (ROOT / "packaging/rootfs-glue").iterdir():
             if name.is_file():

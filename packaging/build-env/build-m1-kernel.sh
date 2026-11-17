@@ -112,6 +112,19 @@ build_kernel() {
 }
 
 package_uniloader() {
+  # Equal kernelrelease is not proof that modules came from this compilation.
+  sha256sum --strict -c /work/out/boot/kernel.sha256
+  [ -s /work/blobs/slk-stock.dtb ] || { echo "ERROR: missing stock DTB" >&2; exit 1; }
+  if [ -f /work/out/boot/initramfs-slim.cpio.gz ]; then
+    sha256sum --strict -c /work/out/boot/initramfs-slim.sha256
+    cmp /work/out/boot/kernel.sha256 /work/out/boot/initramfs-slim.kernel.sha256 || {
+      echo "ERROR: slim initramfs provenance missing or stale; rebuild slim with current kernel/modules" >&2
+      exit 1
+    }
+  fi
+  if [ -f /work/out/boot/initramfs-mini.cpio.gz ]; then
+    sha256sum --strict -c /work/out/boot/initramfs-mini.sha256
+  fi
   echo "== [M1] Building uniLoader =="
   rm -rf /work/out/work/uniLoader
   rsync -a --exclude=".git" /work/sources/uniLoader/ /work/out/work/uniLoader/
