@@ -6,15 +6,18 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
 - [claude] item 7b (pedido do proprietário: GPU é obrigatória): imagem Docker aarch64 de build + compilar `mesa-g77`. Arquivos: `packaging/mesa-g77/make-builder-image.sh` (novo), `out/build/`, `out/packages/`, `logs/mesa-g77-build.log`
+- [claude + subagentes] drivers extras do kernel (pedido do proprietário, 17/11/2026): cada recurso vira um patch em `packaging/kernel-patches/01NN-*.patch`, aplicado depois dos 24 do port, escrito e compilado no computador; teste só depois do M2. Arquivos: `packaging/kernel-patches/` (novo), `research/` (novo), `out/agents/` (worktrees do kernel). Não toca `packaging/build-env/` nem o DTS de memória (item 6 do gemini). Reservado: `0100-*` para a correção de 6 GB do gemini.
 - (livre; preparo de M1 e receitas M4 concluídos no computador — aguardando decisão sobre `efs`/`sec_efs` e ordem explícita do proprietário para iniciar M2 no aparelho)
 
 ## A fazer
 
 Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/00](roadmap/00-roadmap.md#ordem-de-execução-e-entregas).
 
-6. [proprietário] Decidir sobre backup de `efs`/`sec_efs` (IMEI) e autorizar explicitamente o início de **M2** (`lk3rd` + `fastboot boot r8s-mini.img` / `r8s-ram.img` em RAM).
+6. [gemini] Investigar `/sys/firmware/devicetree/base/memory*` (comparar com `slk-stock.dtb` / `r8s-ect.bin`) e ajustar `memory@80000000` do DTS para **6 GB** (`dram_info=01,07,00,6G` / `MemTotal: 5589576 kB` observado no aparelho, contra 8 GB no patch `0003`/`0024` do port) antes de bootar em M2.
+7. [proprietário] Guardar cópia externa dos backups (`backups/`) e autorizar explicitamente o início de **M2** (`lk3rd` + `fastboot boot r8s-mini.img` / `r8s-ram.img` em RAM) após o ajuste de 6 GB.
 7. [gemini] (após autorização de M2) Executar `packaging/host-tools/m2-preflight.sh`, gravar `lk3rd`, testar `r8s-mini.img` / `r8s-ram.img` em RAM e registrar logs/resultados (V2–V3).
 7b. [gemini] Compilar o pacote `packaging/mesa-g77/` (nenhum `.pkg.tar.*` existe em 17/11/2026 06:20). Sem ele, `install-omarchy-r8s.sh` aborta ou roda sem GPU (`--allow-stock-mesa`). Pode ser feito no computador antes de M2; não precisa do aparelho.
+9. [claude/gemini] (depois do teste em RAM do M2) DVFS da GPU: ACPM G3D = id 10 + tabela de 7 frequências, ver `roadmap/07` linha "Frequência variável da GPU". Primeiro só leitura de `get_rate(10)` no aparelho.
 8. [claude] Revisar logs/artefatos gerados em M2–M4 no aparelho real antes de avançar para M5.
 
 ## Feito, aguardando revisão
@@ -24,6 +27,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 - [gemini] commit `5cfb7c3`: item 3 concluído — `packaging/build-env/build-arch-rootfs.sh` gera `out/rootfs/ufs-root.img` (`734.003.200` B / `700 MiB`, `610M` usados, `e2fsck -fn` ok), 160 pacotes `aarch64` sem `linux-*`, módulos + QCA6390 + `r8s-usb-gadget` (`10.42.0.2/24`) + `r8s-growroot` + `r8s-charge-limit` + `r8s-netwatch` + usuário `r8s` com SSH apenas por chave.
 - [gemini] commit `7e9cb19`: item 4 concluído — `packaging/omarchy/install-omarchy-r8s.sh` configura `[omarchy]` stable antes de `[core]`/`[extra]`, valida `omarchy-keyring` por SHA-256 + PGP, bloqueia `linux-*`/`limine*`/`mkinitcpio*`, instala Omarchy + `foot`/`firefox`/`squeekboard` e adiciona glue `r8s` (`AQ_DRM_DEVICES`, `PAN_MESA_DEBUG=noafbc`, `r8s-unbind-fbcon`, `r8s-thermal-trip`, `r8s-recovery-vt`, overrides Lua em `~/.config/hypr/`).
 - [gemini-swarm] commits `95b3ba1`, `c60351a`, `2360528`: item 5 revisado e corrigido no swarm — receita `packaging/mesa-g77/` (15 patches validados em `7d6bb09d`), correção dos módulos `0:0` + `r8s-mini.img` + `softdog`/watchdog/`pstore`/`r8s-heartbeat`/`r8s-safe-freq`/`sddm` DRM/PipeWire/toque, rebuild de `ufs-root.img` (`349c999e...`) e `r8s-mini.img` (`097cfbfa...`), `checks/verify-m1-m4-artifacts.sh` (**54/54 PASS**), `checks/test-flash-tools.sh` (**11/11 PASS**), `m2-preflight.sh` (**27 PASS / 2 WARN / 0 FAIL**) e `manifests/m1-artifacts.md`. *(Ainda sujeito à auditoria externa de `[claude]` quando disponível.)* Auditoria parcial do claude em 17/11/2026: 54/54 e 11/11 PASS reproduzidos; hashes de `r8s-ram`, `r8s-mini`, `lk3rd-r8s.tar` e `ufs-root.img` conferem; `root=/dev/sda32` do DTB bate com o rootfs; SSH por chave e login `r8s` com senha no `ttyGS0`. Não revisado linha a linha: `install-omarchy-r8s.sh`, `mesa-g77/PKGBUILD`, `rootfs-glue/*`.
+- [gemini-swarm] coleta M0 somente leitura em Lineage Recovery (`uid=0`): dumps extras verificados em `backups/` (`up_param`, `vbmeta`, `r8s-ect.bin`, `partition-map.txt`, `lineage-*`, 10/10 `sha256sum -c` OK), `checks/m0-device-hardware.md` e `roadmap/03-primeira-sessao.md` atualizados sem PII. Descoberta crítica: `MemTotal: 5589576 kB` (`dram_info=01,07,00,6G`, **6 GB RAM** vs 8 GB no DTS do port), `sec_touchscreen` em `108d0000.hsi2c/i2c-5/5-0020`, `boot` (`sda13`) = `61.865.984` B (`59,0 MiB`).
 
 ## Revisão
 
@@ -44,5 +48,5 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 - [x] 17/11/2026: sem rootfs Debian completo. Teste em RAM com initramfs slim → Arch ARM mínimo gravado → Omarchy via `pacman`. Ver `roadmap/00`.
 - [x] 17/11/2026: LineageOS 24.0 foi instalado pelo proprietário com ajuda do Gemini.
 
-- [ ] Backup de `efs`/`sec_efs` (IMEI): sem `adb root` não há cópia, e o firmware stock não restaura essas partições. Opções: obter root para copiar antes do primeiro flash, ou aceitar o risco por escrito. O port não grava essas partições (`sources/port/tools/restore-stock.sh`, lista de nunca gravar).
+- [x] 17/11/2026: backup de `efs`, `sec_efs`, `cpefs`, `param`, `persistent`, `dtbo`, `boot` e `recovery` feito pelo claude via adb root do LineageOS Recovery, só leitura; hash e tamanho de cada imagem iguais ao aparelho. Em `backups/` (fora do git, somente leitura), hashes em `backups/stock-backup-verify.txt`. Falta o proprietário guardar uma cópia fora do computador.
 - Escrita no telefone segue a regra 5 de [AGENTS.md](AGENTS.md#trabalho-com-mais-de-um-agente).
