@@ -56,6 +56,25 @@ Fontes: DT entregue pelo bootloader ao Android (`blobs/r8s-device/samsung-runtim
 | Sensores (acelerômetro, giroscópio, proximidade, luz frontal, magnetômetro) | Hub de sensores dentro do **BCM4773** (GPS + MCU), por SPI com protocolo Samsung SSP | ausente | `drivers/sensorhub/brcm` (197295, vários modelos) | Difícil. Dá rotação automática e brilho automático; o GPS está no mesmo chip. Única luz em I2C direto é `tcs3407` traseira (`als_rear`), da câmera |
 | Áudio interno | DSP **ABOX** (firmware `calliope_*`, `abox_tplg.bin`) → UAIF → 2 amplificadores **cs35l41** (Left/Right); microfones digitais DMIC1/2 e VTS via ABOX; placa `samsung,picasso-prince`; calibração `cirrus_amps` | `SND_SOC_CS35L41=m` (patch do z3s: amp sem IRQ); ABOX ausente | `sound/soc/samsung/abox` (33306) + `vts` (9928) | Muito difícil: não há driver ABOX mainline. Testar calibração dos amplificadores só com o backup de `efs` feito. Alternativa imediata a testar em M3: fone/headset **USB-C** (classe USB Audio, usa o host USB que já funciona) |
 
+**Material coletado em 17/11/2026 para cada recurso** (`blobs/r8s-device/`, só leitura; nada disso faz o recurso funcionar sem o driver no kernel do port):
+
+| Recurso | Coletado | O que ainda falta (trabalho no kernel do port) |
+| --- | --- | --- |
+| Bateria | Calibração `battery_data.dat` (em `/efs/Battery`, já no backup `efs`); `max77705_fuelgauge` no dmesg; medidor indica 2927000/4500000 µAh | Corrigir timeouts I2C do medidor; aplicar dados de calibração |
+| Suspensão | Samsung usa `mem_sleep = deep` (s2mem) | Fazer o retorno do deep sleep funcionar (hoje não acorda); usar `power.txt` e o DT como referência |
+| CPU idle | Samsung usa C2 também nos M5 (`lion-cpu-sleep`, latência 455 µs, residência 1000 µs) | Port deixa M5 em WFI; testar C2 nos M5 com esses parâmetros |
+| GPU DVFS | ACPM id 10, ECT 14 níveis | Ver linha "Frequência variável da GPU" |
+| Som interno | 92 firmwares em `vendor/root/firmware`: `abox_tplg.bin`, `calliope_*`, `vts.bin`, `cs35l40-*-spk-prot*.wmfw/.bin` (proteção dos alto-falantes); `mixer_paths.xml`, `audio_*`; 710 linhas ABOX no dmesg | Driver ABOX mainline (inexistente) |
+| Bluetooth | `qca6390/htbtfw20.tlv`, `htnv20.bin` deste aparelho | Comparar com o firmware que o port usa; corrigir a dessincronização (patches 0020–0022) |
+| Wi-Fi (melhoria) | `qca6390/bdwlan.elf*` = dados de placa **deste aparelho**; o port usa `board-2.bin` genérico do linux-firmware | Testar se os dados próprios reduzem as quedas que o port contorna com `r8s-netwatch` |
+| Chamadas/dados | Nós `modem_if`/`cpif` no DT e dmesg; `plmn_*.bin`; RIL é binário Android | Driver de boot/IPC do modem (Samsung) + ponte para ModemManager; o maior de todos |
+| Câmeras | `setfile_imx616`, `setfile_3l6`, `setfile_2ld`, `setfile_hi847`, `is_lib.bin`, `is_rta.bin`, `is_mcu_fw.bin` | Pipeline ISP Samsung inexistente no mainline; PMIC `s2mps22` |
+| GPS | `gpsd`, `gps.xml`, `lhd.conf`, `gps.cer` (BCM4773) | Protocolo do BCM4773; mesmo chip do hub de sensores |
+| Sensores | `[SSP] ssp_probe success` no dmesg; `etc/sensors/hals.conf`; `a96t356_r8s.bin` (grip) | Driver SSP do hub em SPI |
+| Digital | `fingerprint_class_init` no dmesg; leitor sob a tela depende do TEE (`vendor/root/tee`) | Provavelmente inviável fora do Android (TEE + trustlet proprietários) |
+| NFC | `nfc/sec_s3nrn4v_firmware.bin`, `libnfc-sec-vendor.conf` | Driver `sec-nfc` (S3NRN4V) + pilha NFC Linux |
+| Vibração | nó `haptic` do MAX77705 no DT | Driver pequeno (ver tabela acima) |
+
 Ordem proposta, por valor/esforço: hall → vibração → áudio USB-C (só teste) → sensores (rotação) → áudio interno → `s2mps22` com câmeras.
 
 ## O que Halium/libhybris realmente muda
