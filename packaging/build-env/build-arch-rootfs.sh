@@ -166,6 +166,8 @@ chroot "$MNT" depmod "$KVER"
 mkdir -p "$MNT/usr/lib/firmware/ath11k/QCA6390/hw2.0"
 cp /work/blobs/firmware/ath11k/QCA6390/hw2.0/{amss.bin,m3.bin,board-2.bin,Notice.txt} \
   "$MNT/usr/lib/firmware/ath11k/QCA6390/hw2.0/"
+# Samsung BDF (ids 255 and 4); to try: cp board-2.r8s.bin board-2.bin, then reload ath11k_pci.
+cp /work/blobs/firmware/ath11k/QCA6390/hw2.0/board-2.r8s.bin "$MNT/usr/lib/firmware/ath11k/QCA6390/hw2.0/"
 for f in htbtfw20.tlv htnv20.bin; do
   install -D -m 0644 "/work/blobs/r8s-device/vendor/root/firmware/$f" "$MNT/usr/lib/firmware/qca/$f"
 done
