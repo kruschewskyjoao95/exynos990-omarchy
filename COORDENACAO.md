@@ -10,7 +10,6 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 
 
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
-- [claude] 0x0B: análise do alerta de desgaste (loop de releitura em slim + spec JEDEC + mitigação). Arquivos: `research/ufs-clocks.md`, `checks/m2-device-test.md`, `COORDENACAO.md`, `logs/m2-ufs-*`; sem flash ou montagem UFS.
 
 ## A fazer
 
@@ -30,6 +29,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 - [codex] commit `e540519`: investigação independente em `research/ufs-clocks-codex.md`; seis leituras diretas recovery/DTBO iguais aos backups, 13 contadores UFS e saved errors zerados, sem novo dmesg. CLKOUT: PMU compatible ausente da tabela; CMU_AUD: provider `pd_aud` desabilitado → deferred timeout. Sem patch/flash, sem validar escrita/suspensão. Parou USB ao detectar tomada pelo Claude; último estado observado slim em RAM.
 
 <!-- - [agente] commit <sha>: resumo -->
+- [claude] commit `228a3b9`: análise 0x0B (loop de releitura em slim + JEDEC): decode correto, sem correção por software; mitigação RAM-first + confirmação no Recovery/Android. Evidência em `research/ufs-clocks.md`, `logs/m2-ufs-health.log`.
 - [claude] commit `d05751e`: investigação UFS/clocks baseline (slim só leitura, sem flash/montagem): dme-set recusado em debug com link FAST G3 OK; clkout/cmu sem suporte; clk_ignore_unused intencional. Comissão em `research/ufs-clocks.md`; pendência em `checks/m2-device-test.md`.
 - [codex] avisos UFS/clocks do baseline, árvore sem commit: `dme-set` 0x9540/0x321 sai de `exynos_ufs_config_sync_pattern_mask` e o link segue `FAST G3 x2`; `cmu_aud` `-110` porque `pd_aud` está disabled (não é timeout ao energizar AUD); `clk_ignore_unused` e `exynos-clkout -22` (pai `exynos850-pmu`) rastreados. Leitura em slim RAM sem mount (`sda13` igual; começo de `sda33` é zero em 4 KiB e em 1 MiB). `research/ufs-clocks.md`, `logs/m2-ufs-*`, `logs/m2-clocks-*`. Sem flash e sem escrita UFS.
 - [codex] commits `39204cc`, `c376fde`: backup externo no HD Dados (23 arquivos/400.893.292 B, todos os hashes iguais; manifesto 10/10 OK); Recovery root/modelo/bateria 100% conferidos. lk3rd instalado com readback aprovado; fastboot confirmado; mini e slim iniciaram kernel AArch64 nativo, sem UFS montada. Slim: systemd running/0 failed, touchscreen e DRM enumerados. Retorno ao lk3rd confirmado após ambos. Logs/evidência copiados e verificados no HD. **Sem instalação Arch/Omarchy; V3–V9 pendentes.** Ver `checks/m2-device-test.md` (avisos e novo mapa GPT).
