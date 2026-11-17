@@ -6,7 +6,6 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
 - (gemini livre para análise não conflitante de firmwares Wi-Fi/BT em `blobs/r8s-device/vendor/` — aguardando autorização explícita do proprietário para iniciar M2 no aparelho)
-- [claude] PR1 arrumar a casa: commitar config Agent skills + teste + .gitignore. Arquivos: `AGENTS.md`, `docs/agents/*`, `checks/test-agent-skills.py`, `.gitignore`, `COORDENACAO.md`
 
 ## A fazer
 
@@ -23,6 +22,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 ## Feito, aguardando revisão
 
 <!-- - [agente] commit <sha>: resumo -->
+- [claude] commit `54f0fe2`: PR1 arrumar a casa — config Agent skills (AGENTS.md + docs/agents/*), `checks/test-agent-skills.py` 4/4, `.gitignore` ignora `logs/*.status`. Regressão: build 17/17, instalador 10/10, flash 18/18, artefatos 56/56. Sem teste no aparelho.
 - [claude] conjunto **baseline** com Wi-Fi sem firmware embutido (17/11/2026): kernel só com port + `0100`, `EXTRA_FIRMWARE=""`, sem `DEVFREQ_THERMAL`; rootfs com `board-2.bin`, `board-2.r8s.bin`, `amss/m3` e `qca/htbtfw20.tlv`+`htnv20.bin`; slim e imagens regenerados. Artefatos 56/56. `Image` `cd727178…`, `ufs-root.img` `a2bcc167…`, `r8s-ram.img` `fe07490f…` (63.150.080 B), `r8s-ufs` `2cf80ae1…`, `r8s-mini` `5b3545e6…`, slim `53a8ed4b…`. É o conjunto para o 1º teste em RAM. Série anterior preservada em `out/validation/series-wifi/`. **Não testado no aparelho.**
 - [claude] patch `0106` (DT: RTS da UART do Bluetooth, `uart1_bus_single`): fora da `series`, opt-in; `git apply --check` ok sobre `out/work/linux`; não compilado nem testado. Ver `packaging/kernel-patches/README.md`. Atenção: o README exige que o 1º teste em RAM use baseline (port + `0100`); os artefatos atuais em `out/boot/` são da `series`, e falta gerar um conjunto baseline com o Wi-Fi sem firmware embutido.
 - [claude] Wi-Fi sem firmware embutido (17/11/2026): `CONFIG_EXTRA_FIRMWARE=""`; `amss/m3/board-2.bin` do port e `board-2.r8s.bin` (BDF Samsung, ids 255 e 4, de `bdwlan.elf` sha `9fe8b78f…`) ficam no rootfs e no slim, trocáveis sem recompilar. Kernel/rootfs/slim/imagens regenerados, artefatos 56/56, receitas 17/17; `ufs-root.img` `759c5c2c…`, `r8s-ram.img` 63.148.032 B. **Não testado no aparelho**; o BDF do port segue como padrão. Hyprland headless: o `Hyprland` ARM64 aborta com `CBackend::create() failed!` em QEMU (sem DRM, também aninhado em Weston); sem aprovação gráfica.
