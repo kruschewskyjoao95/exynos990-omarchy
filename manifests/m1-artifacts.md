@@ -12,10 +12,10 @@ Verificado localmente em: **2026-11-17** por `checks/verify-m1-m4-artifacts.sh` 
 | Caminho | Bytes | SHA-256 | Papel / limite verificado |
 | --- | ---: | --- | --- |
 | `out/boot/Image` | 27291656 | `2ad04d4994d2b99d5fc935438bf106c0ae5b544eb6eabb18342f10f765a9a6c7` | Kernel ARM64 compilado (`6.12.0-rc5-next-20241104-r8s`) |
-| `out/boot/exynos990-r8s.dtb` | 83065 | `577123e4cb66ef432aefac091da32bdcdf4d426b4a7aff84c9cedfb151f8a2d7` | DTB mainline (`0xd00dfeed`), embutido no uniLoader |
+| `out/boot/exynos990-r8s.dtb` | 83065 | `c406ea4e6c281c5e9ac89b3378779f02c04ce034a5c54e24dc43079f067a8c95` | DTB mainline (`0xd00dfeed`, ajuste 6 GB `0100-*`), embutido no uniLoader |
 | `out/boot/kernel.config` | 226720 | `97686ac4f7c699e72462d75b111d1c1a20648c59294481a05a4b66945da2a176` | `.config` resultante de `r8s.config` + `olddefconfig` |
 | `out/boot/kernel-release.txt` | 43 | `47370f4c0aee5eb517f3e0b8241e18d9ff0fead29d66cdebb06c052e9233414e` | Registro `kernelrelease=6.12.0-rc5-next-20241104-r8s` |
-| `out/boot/kernel.sha256` | 306 | `e6d18ec4a127f3b01614956b4aa04da0b720cd638ee75f335fa0f37e7a0b4987` | Checksums de `Image`, `exynos990-r8s.dtb` e tarball de módulos |
+| `out/boot/kernel.sha256` | 306 | `a092b8a258880a7121e246d0e440a9d62ea50830ace19461089d0335b16161aa` | Checksums de `Image`, `exynos990-r8s.dtb` e tarball de módulos |
 | `out/modules-6.12.0-rc5-next-20241104-r8s.tar.gz` | 8271827 | `9413d24ae9eda891cf1ff63f68ccca40c62d643e3c36cbdc03c5162489dbdd56` | Módulos do mesmo build (`./modules.dep` presente) |
 | `out/boot/lk3rd-r8s.img` | 2097152 | `48a15319a0ee3dcb65faaacaf51bd4bb897925c5efc03d19543eaa4afc4286ab` | Bootloader secundário r8s (`<= 2097152` B / 2 MiB) |
 | `out/boot/lk3rd-r8s.tar` | 573440 | `d999b844426f229742019b1cadf154ac95a90251a598dfa6708ee1ec1185c0e5` | Pacote Heimdall/Odin de `lk3rd-r8s.img` para Download mode |
@@ -24,12 +24,12 @@ Verificado localmente em: **2026-11-17** por `checks/verify-m1-m4-artifacts.sh` 
 | `out/boot/initramfs-slim.sha256` | 104 | `fcb2175e23142eb82a4c214142ec76f3a7552747b3ada011593a3a2e92e98004` | Checksum de `initramfs-slim.cpio.gz` |
 | `out/boot/initramfs-mini.cpio.gz` | 1016955 | `7c3e26f1c985221bd1ae0bfdac9dffd93d2edeb3e2bd2ebad4733e6293beb649` | Initramfs mínimo BusyBox/diagnóstico USB (`gzip -t` ok) |
 | `out/boot/initramfs-mini.sha256` | 104 | `b2956497f45ddc604c4f9e51a9eef5f44eab210d0d6e3cce41aede742c3613d4` | Checksum de `initramfs-mini.cpio.gz` |
-| `out/boot/r8s-ram.img` | 65509376 | `2682a2c4a6f1d9da568680cbb2506904c14950f16bd296982f22d4b69646bc52` | Imagem de teste em RAM (`<= 67108864` B / 64 MiB do buffer `lk3rd`) |
-| `out/boot/r8s-ram.sha256` | 93 | `d3dfcab74e67a8eaaf44e4b5c553cb350cb1aedbc137a5ab8e7423c75baadcc3` | Checksum de `r8s-ram.img` |
-| `out/boot/r8s-mini.img` | 28801024 | `097cfbface94b2706eee3cb96fffe016f9b96d68268732298c54d613c86f97bb` | Imagem de diagnóstico mínimo em RAM (`<= 67108864` B) |
-| `out/boot/r8s-mini.sha256` | 94 | `2836459244f86efeec0a1372e1517989f610b5e7f70903086049d9315978cb28` | Checksum de `r8s-mini.img` |
-| `out/boot/r8s-ufs.img` | 27785216 | `aa79d83907448a1ac2b37ca72468df849411cb5cbff3f6b783ee73b9e2908bf1` | Imagem persistente para rootfs em UFS (`root=/dev/sda32`) |
-| `out/boot/r8s-ufs.sha256` | 93 | `33b9faedb3549aff63424a2c3b9944f453269e620a7af244f6752eee65074133` | Checksum de `r8s-ufs.img` |
+| `out/boot/r8s-ram.img` | 65509376 | `cc942728037c3a3eab935cfef1d9b8f81a452a49c929321c19d5c600f4d305dc` | Imagem de teste em RAM (`<= 67108864` B / 64 MiB do buffer `lk3rd`) |
+| `out/boot/r8s-ram.sha256` | 93 | `729477c524abf206c33fcdf4048df93a4d2c3229a7656f81612a07edd3b259d1` | Checksum de `r8s-ram.img` |
+| `out/boot/r8s-mini.img` | 28801024 | `ce095b7fd907b125284e770cd5b35daa5910fc7f15facf35b20b79cfb5704fc3` | Imagem de diagnóstico mínimo em RAM (`<= 67108864` B) |
+| `out/boot/r8s-mini.sha256` | 94 | `493df0ca7b3a6bab5816566d9ce2d21f5cdbd7cbe36650c1957fe967d6d28f14` | Checksum de `r8s-mini.img` |
+| `out/boot/r8s-ufs.img` | 27785216 | `eeeefac7039f1618c64f9bf142ce6f09d5da00019afe860d0a990e1fcea763aa` | Imagem persistente para rootfs em UFS (`root=/dev/sda32`) |
+| `out/boot/r8s-ufs.sha256` | 93 | `c42af3abbaa53a3659f92a2e2c1bbd16a7b79a69607eab151fc5d66e533d4407` | Checksum de `r8s-ufs.img` |
 | `out/rootfs/ufs-root.img` | 734003200 | `349c999e50a3157c003dd1de392dee69ba12c510f42bf91c03279274c060c112` | Rootfs ext4 Arch Linux ARM mínimo (`<= 734003200` B / 700 MiB) |
 | `out/rootfs/ufs-root.sha256` | 96 | `ae568005b611ad66d0c3266c2e2c2591104043ea024b8ee5b72d3491ce7ff154` | Checksum de `ufs-root.img` |
 | `out/rootfs/arch-base-packages.txt` | 3064 | `ad3ce62702b84670b06759cd7d18f204c9f10a7f96892cb972afd71fe2b00fa8` | 160 pacotes AArch64 instalados; sem pacote `linux-*` de kernel |

@@ -1,0 +1,68 @@
+From: Antigravity <gemini@linuxs20fe.local>
+Date: Tue, 17 Nov 2026 07:05:00 -0300
+Subject: [PATCH] arm64: dts: exynos990-r8s: adjust high memory bank for 6 GB SM-G780F
+
+The target handset is the 6 GB SM-G780F variant (`dram_info=01,07,00,6G`,
+`MemTotal: 5589576 kB`). Its runtime devicetree
+(`blobs/r8s-device/samsung-runtime.dtb`) declares eight 512 MiB blocks
+from 0x8_80000000 to 0x9_80000000 (4 GiB high bank) instead of the
+6 GiB high bank (to 0xa_00000000) used by 8 GB r8s variants, and places
+`reserved-memory/el2_earlymem` at `<0x09 0x7ee00000 0x1200000>`
+(0x9_7ee00000 .. 0x9_80000000).
+
+Clamp the high bank to `<0x8 0x80000000 0x0 0xfec00000>` (0x9_7ec00000),
+stopping 20 MiB short of 0x9_80000000 so `el2_earlymem` remains out of
+the linear map while keeping the full 6 GB RAM (~5.85 GiB before reserved
+pools) and preserving patch 0024's `s2mpu-table` low-bank exclusion at
+`0xc1b00000`.
+
+---
+--- a/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
++++ b/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
+@@ -59,25 +59,21 @@
+ 	};
+ 
+ 	/*
+-	 * 8 GB variant (SM-G780F, MemTotal 7659160 kB as measured on the target
+-	 * unit). The upstream r8s DTS describes the 6 GB variant, whose last block
+-	 * is only 0xc0000000; using it here would lose ~3 GB.
++	 * 6 GB variant (SM-G780F, dram_info=01,07,00,6G, MemTotal 5589576 kB
++	 * observed on the target unit). Runtime DT (/sys/firmware/fdt) lists
++	 * eight 512 MB high-bank blocks: 0x8_80000000 .. 0x9_80000000 (4 GiB),
++	 * NOT 0x8_80000000 .. 0xa_00000000 (6 GiB), and reserves:
++	 *   el2_earlymem  0x9_7ee00000 .. 0x9_80000000  (0x1200000 = 18 MB)
+ 	 *
+-	 * /proc/iomem on the target reports 880000000-9ffffffff as System RAM,
+-	 * but the high bank MUST still stop at 0x1_7ec00000, exactly as c1s and
+-	 * z3s do. That is not an oversight in those boards - it is deliberate:
++	 * Stop the high bank 20 MB short of 0x9_80000000 (0x9_7ec00000, span
++	 * 0x0_fec00000) so el2_earlymem stays outside the linear map while
++	 * avoiding mapping 2 GiB past the end of 6 GB RAM.
+ 	 *
+-	 *   0x8_80000000 + 0x1_7ec00000 = 0x9_FEC00000
++	 * Low banks from target runtime DT + port s2mpu-table exclusion:
++	 *   80000000-baafffff (0x3ab00000), c1b00000-dfffffff (0x1e500000),
++	 *   e1900000-ffffffff (0x1e700000)
+ 	 *
+-	 * and the r8s downstream device tree reserves
+-	 *   el2_earlymem  0x9fec00000 .. 0xa00000000  (0x1400000 = 20 MB)
+-	 * exactly there. That is EL2 firmware memory. Declaring it as ordinary
+-	 * memory makes map_mem() fault while building the linear map, which
+-	 * killed every boot until it was traced with framebuffer markers.
+-	 *
+-	 * Low banks confirmed against /proc/iomem:
+-	 *   80000000-baafffff (0x3ab00000), c1200000-dfffffff (0x1ee00000),
+-	 *   e1900000-ffffffff (0x1e700000)
++	 * TODO(M2): confirm exact /proc/iomem ranges on first mainline boot.
+ 	 */
+ 	memory@80000000 {
+ 		device_type = "memory";
+@@ -96,7 +92,7 @@
+ 		      /* Memory hole */
+ 		      <0x0 0xe1900000 0x0 0x1e700000>,
+ 		      /* Memory hole - last block */
+-		      <0x8 0x80000000 0x1 0x7ec00000>;
++		      <0x8 0x80000000 0x0 0xfec00000>;
+ 	};
+ 
+ 	reserved-memory {
