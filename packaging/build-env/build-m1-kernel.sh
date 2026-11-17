@@ -42,10 +42,16 @@ build_kernel() {
   rm -rf /work/out/work/linux
   rsync -a --exclude=".git" /work/sources/linux/ /work/out/work/linux/
   cd /work/out/work/linux
+  # Isolate git context from parent repo (/work/.git) which ignores out/.
+  git init -q
   for p in /work/sources/port/kernel/patches/*.patch; do
     echo "Applying $(basename "$p")"
     git apply "$p"
   done
+  [ -f arch/arm64/boot/dts/exynos/exynos990-r8s.dts ] || {
+    echo "ERROR: exynos990-r8s.dts missing after patches" >&2
+    exit 1
+  }
 
   mkdir -p firmware/ath11k/QCA6390/hw2.0
   cp /work/blobs/firmware/ath11k/QCA6390/hw2.0/{amss.bin,m3.bin,board-2.bin} firmware/ath11k/QCA6390/hw2.0/
@@ -78,7 +84,8 @@ package_uniloader() {
   cp /work/out/boot/exynos990-r8s.dtb blob/dtb
 
   # UFS boot image (empty gzip ramdisk placeholder)
-  printf "" | gzip -n > blob/ramdisk
+  printf "" | gzip -n > /tmp/empty-ramdisk
+  cp /tmp/empty-ramdisk blob/ramdisk
   make ARCH=aarch64 CROSS_COMPILE=aarch64-linux-gnu- r8s_defconfig
   make ARCH=aarch64 CROSS_COMPILE=aarch64-linux-gnu- -j"$NPROC"
 
@@ -88,13 +95,15 @@ package_uniloader() {
       --kernel_offset 0x8000 --ramdisk_offset 0 --tags_offset 0x100 \
       --dtb_offset 0x01F00000 --os_version 13.0.0 --os_patch_level 2099-12 \
       --kernel uniLoader --dtb /work/blobs/slk-stock.dtb \
-      --ramdisk blob/ramdisk -o /work/out/boot/r8s-ufs.img
+      --ramdisk /tmp/empty-ramdisk -o /work/out/boot/r8s-ufs.img
     sha256sum /work/out/boot/r8s-ufs.img | tee /work/out/boot/r8s-ufs.sha256
   else
     echo "WARN: /work/blobs/slk-stock.dtb missing; skipped mkbootimg for r8s-ufs.img"
   fi
 
   if [ -f /work/out/boot/initramfs-slim.cpio.gz ] && [ -f /work/blobs/slk-stock.dtb ]; then
+    # uniLoader embeds blob/ramdisk directly; pass an empty ramdisk to mkbootimg
+    # so the initramfs is not packed twice into the Android boot image.
     cp /work/out/boot/initramfs-slim.cpio.gz blob/ramdisk
     make ARCH=aarch64 CROSS_COMPILE=aarch64-linux-gnu- -j"$NPROC"
     python3 /work/sources/mkbootimg/mkbootimg.py \
@@ -102,7 +111,13 @@ package_uniloader() {
       --kernel_offset 0x8000 --ramdisk_offset 0 --tags_offset 0x100 \
       --dtb_offset 0x01F00000 --os_version 13.0.0 --os_patch_level 2099-12 \
       --kernel uniLoader --dtb /work/blobs/slk-stock.dtb \
-      --ramdisk blob/ramdisk -o /work/out/boot/r8s-ram.img
+      --ramdisk /tmp/empty-ramdisk -o /work/out/boot/r8s-ram.img
+    RAM_BYTES=$(stat -c%s /work/out/boot/r8s-ram.img)
+    if [ "$RAM_BYTES" -gt 67108864 ]; then
+      echo "ERROR: r8s-ram.img ($RAM_BYTES bytes) exceeds lk3rd 64 MiB (67108864 bytes) buffer!" >&2
+      rm -f /work/out/boot/r8s-ram.img
+      exit 1
+    fi
     sha256sum /work/out/boot/r8s-ram.img | tee /work/out/boot/r8s-ram.sha256
   fi
 }
