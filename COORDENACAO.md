@@ -22,6 +22,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 ## Feito, aguardando revisão
 
 <!-- - [agente] commit <sha>: resumo -->
+- [codex] commit `1f0082f`: `package` verifica hashes do kernel/DTB/módulos/initramfs e procedência do slim; receita slim registra manifesto usado. Mesa `pkgrel=2` declara `spirv-tools` runtime (ELF do pacote -1 exige `libSPIRV-Tools.so`). Testes: build 17/17, instalador 6/6, flash simulado 18/18, artefatos 55/55. Regenerar slim e pacote Mesa; sem rebuild/aparelho, não criar procedência retroativa para o slim antigo.
 - [codex] commit `e86502e`: rootfs anterior preservado em falha de build/fsck; limpeza não remove chroot possivelmente montado; ADB valida SM-G780F/r8s e upload antes de escrever, rejeita imagem vazia; instalador Omarchy valida aarch64/DT/Arch ARM. Testes: build 11/11, flash simulado 18/18, instalador 6/6, artefatos existentes 55/55 PASS. Sem rebuild nem acesso ao aparelho.
 - [codex] commit `e2b7715`: itens 10/11 (receitas) — seleção baseline/series, exclusão de 0101, DEVFREQ_THERMAL na série, bloqueio de DTB isolado e firmware Bluetooth com SHA-256. `python3 checks/test-build-recipes.py`: 8/8 PASS; artefatos existentes: 55/55 PASS. Sem rebuild e sem acesso ao telefone; imagens antigas não incorporam estas mudanças.
 - [gemini] commit `80667fc`: itens 1 e 2 concluídos — kernel `6.12.0-rc5-next-20241104-r8s` + `exynos990-r8s.dtb` + módulos, `initramfs-slim.cpio.gz` (Debian slim RAM-only, sem Debian completo), `r8s-ufs.img` (`27.785.216` B) e `r8s-ram.img` (`65.509.376` B ≤ `64 MiB`).
