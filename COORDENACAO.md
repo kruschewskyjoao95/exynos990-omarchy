@@ -5,13 +5,15 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 ## Em andamento
 
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
-- (livre; aguardando revisão do item 5 por `[claude]` e autorização do proprietário antes de qualquer escrita em M2)
+- (livre; preparo de M1 e receitas M4 concluídos no computador — aguardando decisão sobre `efs`/`sec_efs` e ordem explícita do proprietário para iniciar M2 no aparelho)
 
 ## A fazer
 
 Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/00](roadmap/00-roadmap.md#ordem-de-execução-e-entregas).
 
-5. [claude] Revisar 3 e 4 contra `sources/port/tools/build-rootfs.sh` e `build-ufs-image.sh` (serviços r8s que precisam existir no Arch).
+6. [proprietário] Decidir sobre backup de `efs`/`sec_efs` (IMEI) e autorizar explicitamente o início de **M2** (`lk3rd` + `fastboot boot r8s-mini.img` / `r8s-ram.img` em RAM).
+7. [gemini] (após autorização de M2) Executar `packaging/host-tools/m2-preflight.sh`, gravar `lk3rd`, testar `r8s-mini.img` / `r8s-ram.img` em RAM e registrar logs/resultados (V2–V3).
+8. [claude] Revisar logs/artefatos gerados em M2–M4 no aparelho real antes de avançar para M5.
 
 ## Feito, aguardando revisão
 
@@ -19,6 +21,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 - [gemini] commit `80667fc`: itens 1 e 2 concluídos — kernel `6.12.0-rc5-next-20241104-r8s` + `exynos990-r8s.dtb` + módulos, `initramfs-slim.cpio.gz` (Debian slim RAM-only, sem Debian completo), `r8s-ufs.img` (`27.785.216` B) e `r8s-ram.img` (`65.509.376` B ≤ `64 MiB`).
 - [gemini] commit `5cfb7c3`: item 3 concluído — `packaging/build-env/build-arch-rootfs.sh` gera `out/rootfs/ufs-root.img` (`734.003.200` B / `700 MiB`, `610M` usados, `e2fsck -fn` ok), 160 pacotes `aarch64` sem `linux-*`, módulos + QCA6390 + `r8s-usb-gadget` (`10.42.0.2/24`) + `r8s-growroot` + `r8s-charge-limit` + `r8s-netwatch` + usuário `r8s` com SSH apenas por chave.
 - [gemini] commit `7e9cb19`: item 4 concluído — `packaging/omarchy/install-omarchy-r8s.sh` configura `[omarchy]` stable antes de `[core]`/`[extra]`, valida `omarchy-keyring` por SHA-256 + PGP, bloqueia `linux-*`/`limine*`/`mkinitcpio*`, instala Omarchy + `foot`/`firefox`/`squeekboard` e adiciona glue `r8s` (`AQ_DRM_DEVICES`, `PAN_MESA_DEBUG=noafbc`, `r8s-unbind-fbcon`, `r8s-thermal-trip`, `r8s-recovery-vt`, overrides Lua em `~/.config/hypr/`).
+- [gemini-swarm] commits `95b3ba1`, `c60351a`, `2360528`: item 5 revisado e corrigido no swarm — receita `packaging/mesa-g77/` (15 patches validados em `7d6bb09d`), correção dos módulos `0:0` + `r8s-mini.img` + `softdog`/watchdog/`pstore`/`r8s-heartbeat`/`r8s-safe-freq`/`sddm` DRM/PipeWire/toque, rebuild de `ufs-root.img` (`349c999e...`) e `r8s-mini.img` (`097cfbfa...`), `checks/verify-m1-m4-artifacts.sh` (**54/54 PASS**), `checks/test-flash-tools.sh` (**11/11 PASS**), `m2-preflight.sh` (**27 PASS / 2 WARN / 0 FAIL**) e `manifests/m1-artifacts.md`. *(Ainda sujeito à auditoria externa de `[claude]` quando disponível.)*
 
 ## Revisão
 
