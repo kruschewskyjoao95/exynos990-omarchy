@@ -6,7 +6,6 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
 - (gemini livre para análise não conflitante de firmwares Wi-Fi/BT em `blobs/r8s-device/vendor/` — aguardando autorização explícita do proprietário para iniciar M2 no aparelho)
-- [claude] PR6 correção de roteiro e manifesto: backup-verify + Heimdall/tar + hashes atuais. Arquivos: `manifests/m2-runbook.md`, `manifests/m1-artifacts.md`, `checks/test-m2-runbook.py`, `COORDENACAO.md`
 
 ## A fazer
 
@@ -21,6 +20,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 ## Feito, aguardando revisão
 
 <!-- - [agente] commit <sha>: resumo -->
+- [claude] commit `de7cc81`: PR6 correção de roteiro e manifesto (empilhado no PR5) — backup-verify via `backup-manifest.sha256`, Heimdall `--BOOT`/`boot.img.lz4` definido, `m1-artifacts.md` com baseline atual. Regressão: build 17/17, instalador 10/10, artefatos 56/56.
 - [claude] commit `1c82566`: PR5 escrituração M1 (empilhado no PR4) — item de containers/loop marcado com evidência; nota Mesa `-2` corrigida. Regressão: runbook 2/2, kernel-sets 3/3, build 17/17, artefatos 56/56.
 - [claude] commit `bef20a2`: PR4 pré-requisitos offline M2 (empilhado no PR3) — runbook + revisão containers/loop + guarda `checks/test-m2-runbook.py` 2/2. Regressão: build 17/17, instalador 10/10, skills 4/4, flash 18/18, artefatos 56/56. Sem aparelho.
 - [gemini] commit `d7155e2`: preflight offline M2 (`m2-preflight.sh --probe-device --strict-backups`: **32 PASS / 1 WARN / 0 FAIL**, sem dispositivo USB anexado) em `manifests/m2-preflight-2026-11-17.md` e auditoria offline de firmwares Wi-Fi/BT em `blobs/r8s-device/vendor/` registrada em `research/wifi-bt-vendor-blobs-audit.md` (sem blobs proprietários no git).
