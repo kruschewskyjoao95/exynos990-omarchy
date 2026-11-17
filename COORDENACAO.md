@@ -6,6 +6,7 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
 - (gemini livre para análise não conflitante de firmwares Wi-Fi/BT em `blobs/r8s-device/vendor/` — aguardando autorização explícita do proprietário para iniciar M2 no aparelho)
+- [claude] PR6 correção de roteiro e manifesto: backup-verify + Heimdall/tar + hashes atuais. Arquivos: `manifests/m2-runbook.md`, `manifests/m1-artifacts.md`, `checks/test-m2-runbook.py`, `COORDENACAO.md`
 
 ## A fazer
 

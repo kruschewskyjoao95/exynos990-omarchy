@@ -10,14 +10,14 @@ Pré-requisitos offline do M2 físico. Conjunto **baseline** (port + `0100`, `EX
 
 ## Antes de conectar o telefone (checklist do proprietário)
 
-1. Cópia externa de `backups/` (fora do computador) e conferir `sha256sum -c backups/stock-backup-verify.txt` — 8 entradas: `efs`, `sec_efs`, `cpefs`, `param`, `persistent`, `dtbo`, `boot`, `recovery`
+1. Cópia externa de `backups/` (fora do computador) e conferir na cópia com `(cd backups && sha256sum -c backup-manifest.sha256)` (10 OK). Nota: `backups/stock-backup-verify.txt` usa o formato `partição hash`, então `sha256sum -c` direto nele falha — quem confere esse arquivo é o `m2-preflight.sh --strict-backups`
 2. Confirmação "sem dados pessoais a preservar" (M0) ou cópia dos dados
 3. Ordem explícita do M2 (lk3rd + `fastboot boot` em RAM); gravar `lk3rd` já é alteração persistente
 
 ## Ao conectar (nessa ordem)
 
 1. Recovery: `adb shell getprop ro.product.model` / `ro.product.device` — `packaging/host-tools/adb-common.sh` exige `SM-G780F`/`r8s` e recusa outros valores (falha segura). Sem `adb root` (`ro.debuggable=0`), a volta ao stock é pelo Download mode, não por `restore-stock.sh`
-2. Download mode: `heimdall detect --verbose` deve responder; gravar `out/boot/lk3rd-r8s.tar` via heimdall (flags no `FLASHING.md` do port) e checar o menu/fastboot do lk3rd
+2. Download mode: `heimdall detect --verbose` deve responder. Ferramenta: heimdall no Linux (Odin no Windows). Arquivo: `out/boot/lk3rd-r8s.tar` — pacote Odin contendo só `boot.img.lz4` (o payload é `lk3rd-r8s.img`, 2 MiB; o `.img` cru não é passado ao heimdall). Destino: partição BOOT (`sda13`): `heimdall flash --BOOT out/boot/lk3rd-r8s.tar`. Se o heimdall rejeitar o `.lz4`, usar o mesmo `.tar` no Odin. Depois checar o menu/fastboot do lk3rd
 3. RAM (nada gravado): `fastboot boot out/boot/r8s-mini.img` primeiro, depois `out/boot/r8s-ram.img`; recolher logs de boot e testar o console antes de qualquer gravação do rootfs
 4. Mapa conferido no aparelho antes de gravar: `boot` → `sda13`, `userdata` → `sda32` (`backups/partition-map.txt`)
 

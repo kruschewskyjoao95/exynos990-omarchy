@@ -11,7 +11,9 @@ class M2Runbook(unittest.TestCase):
         text = (ROOT / "manifests" / "m2-runbook.md").read_text()
         for marker in ("cd727178", "fe07490f", "a2bcc167", "d999b844",
                        "SM-G780F", "ro.product.model", "ro.product.device",
-                       "lk3rd-r8s.tar", "fastboot boot", "/dev/ttyACM",
+                       "lk3rd-r8s.tar", "boot.img.lz4", "heimdall flash --BOOT",
+                       "backup-manifest.sha256",
+                       "fastboot boot", "/dev/ttyACM",
                        "sda13", "sda32", "stock-backup-verify.txt"):
             self.assertIn(marker, text)
 
