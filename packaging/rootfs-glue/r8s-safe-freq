@@ -1,0 +1,60 @@
+#!/bin/sh
+# CPU operating-point and RCU stall policy for r8s (Exynos 990).
+# Derived from sources/port/device/r8s-safe-freq:
+# - Pins CPU clusters (min=max) by default to avoid ACPM DVFS -110 deadlocks
+#   (override via /etc/r8s/dvfs = pin | dyn and /etc/r8s/cpucl2 = on | off | pin:<khz> | cap:<khz>).
+# - Enables rcu_cpu_stall_cputime=1 and extends rcu_cpu_stall_timeout=60 so
+#   Panfrost GPU resets do not prematurely trip kernel.panic_on_rcu_stall=1.
+C=/sys/devices/system/cpu
+for _ in $(seq 1 50); do
+  [ -e "$C/cpu0/cpufreq/scaling_max_freq" ] && break
+  sleep 0.2
+done
+
+DVFS=$(cat /etc/r8s/dvfs 2>/dev/null || echo pin)
+pin() {
+  [ -e "$C/cpu$1/cpufreq" ] || return 0
+  F="$C/cpu$1/cpufreq"
+  echo "$2" > "$F/scaling_max_freq" 2>/dev/null || true
+  echo "$2" > "$F/scaling_min_freq" 2>/dev/null || true
+  echo "$2" > "$F/scaling_max_freq" 2>/dev/null || true
+}
+
+if [ "$DVFS" = pin ]; then
+  pin 0 1456000
+  pin 4 1690000
+else
+  echo 2002000 > "$C/cpu0/cpufreq/scaling_max_freq" 2>/dev/null || true
+  echo 2600000 > "$C/cpu4/cpufreq/scaling_max_freq" 2>/dev/null || true
+fi
+
+MODE=$(cat /etc/r8s/cpucl2 2>/dev/null || echo on)
+case "$MODE" in
+  on)
+    for c in 6 7; do echo 1 > "$C/cpu$c/online" 2>/dev/null || true; done
+    if [ "$DVFS" = pin ]; then
+      pin 6 1586000
+    else
+      echo 2002000 > "$C/cpu6/cpufreq/scaling_max_freq" 2>/dev/null || true
+    fi
+    ;;
+  off)
+    for c in 7 6; do echo 0 > "$C/cpu$c/online" 2>/dev/null || true; done
+    ;;
+  pin:*)
+    k=${MODE#pin:}
+    for c in 6 7; do echo 1 > "$C/cpu$c/online" 2>/dev/null || true; done
+    pin 6 "$k"
+    ;;
+  cap:*)
+    k=${MODE#cap:}
+    for c in 6 7; do echo 1 > "$C/cpu$c/online" 2>/dev/null || true; done
+    echo "$k" > "$C/cpu6/cpufreq/scaling_max_freq" 2>/dev/null || true
+    ;;
+esac
+
+logger -t r8s-safe-freq "dvfs=$DVFS cpucl2=$MODE online=$(cat "$C/cpu6/online" 2>/dev/null)$(cat "$C/cpu7/online" 2>/dev/null) max6=$(cat "$C/cpu6/cpufreq/scaling_max_freq" 2>/dev/null || echo -)" || true
+
+echo 1 > /sys/module/rcupdate/parameters/rcu_cpu_stall_cputime 2>/dev/null || true
+echo 60 > /sys/module/rcupdate/parameters/rcu_cpu_stall_timeout 2>/dev/null || true
+exit 0

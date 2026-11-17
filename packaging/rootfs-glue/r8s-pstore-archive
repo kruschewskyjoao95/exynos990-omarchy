@@ -1,0 +1,12 @@
+#!/bin/sh
+# Archive ramoops/pstore crash records under unique per-boot directories so a
+# subsequent panic does not overwrite the previous boot's logs.
+set -eu
+
+S=/var/lib/systemd/pstore
+[ -d "$S" ] || exit 0
+[ -n "$(ls -A "$S" 2>/dev/null)" ] || exit 0
+
+D="/var/log/r8s/pstore/$(date +%s)-$(uname -r)"
+mkdir -p "$D"
+cp -p "$S"/* "$D"/ 2>/dev/null || true

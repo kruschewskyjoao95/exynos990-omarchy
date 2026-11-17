@@ -1,0 +1,33 @@
+#!/bin/sh
+# Power-key action for Omarchy/Hyprland on r8s.
+# Invoked by Hyprland bindl on XF86PowerOff (logind keeps 5s HandlePowerKeyLongPress=poweroff).
+set -u
+
+ACTION="${1:-short}"
+
+if ! command -v hyprctl >/dev/null 2>&1; then
+  logger -t r8s-power "hyprctl not found for action=$ACTION"
+  exit 0
+fi
+
+case "$ACTION" in
+  short)
+    if hyprctl -j monitors 2>/dev/null | grep -q '"dpmsStatus":[[:space:]]*false'; then
+      hyprctl dispatch dpms on >/dev/null 2>&1 || true
+    else
+      if command -v omarchy-lock-screen >/dev/null 2>&1; then
+        omarchy-lock-screen >/dev/null 2>&1 &
+      fi
+      hyprctl dispatch dpms off >/dev/null 2>&1 || true
+    fi
+    ;;
+  menu)
+    if command -v omarchy-menu >/dev/null 2>&1; then
+      exec omarchy-menu system
+    fi
+    ;;
+  *)
+    echo "usage: $0 [short|menu]" >&2
+    exit 2
+    ;;
+esac

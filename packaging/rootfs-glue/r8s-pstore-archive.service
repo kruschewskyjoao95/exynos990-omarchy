@@ -1,0 +1,11 @@
+[Unit]
+Description=Archive r8s ramoops/pstore crash records under unique names
+After=systemd-pstore.service
+Wants=systemd-pstore.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/r8s-pstore-archive
+
+[Install]
+WantedBy=multi-user.target
