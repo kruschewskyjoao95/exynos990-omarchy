@@ -2,6 +2,10 @@
 
 Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o proprietário. Regras em [AGENTS.md](AGENTS.md#trabalho-com-mais-de-um-agente). Mantenha cada item em uma ou duas linhas; detalhes vão no commit ou no documento da etapa.
 
+## Estado atual do aparelho
+
+17/11/2026: **LineageOS restaurado e boot completo confirmado; lk3rd removido.** Boot voltou a `sda13` (59 MiB); o slot dividido `sda33` foi removido da GPT. Nenhum Arch/Omarchy instalado. USB liberado após encerrar a restauração. Os registros de lk3rd/slim abaixo são históricos; não reutilizar o mapa dividido como estado atual. Alerta UFS de vida estimada permanece preexistente. Evidência: `checks/return-lineage.md`.
+
 ## Em andamento
 
 - [codex] Investigar saúde UFS 0x0B: cruzar log Samsung preservado com sysfs mainline e fonte Lineage fixada; sem comandos de escrita/reset/flash no telefone. Caminhos: `research/ufs-health.md`, `checks/ufs-clocks-ram.md`, `research/ufs-clocks-fixes.md`, `out/validation/ufs-health/`.
@@ -15,12 +19,14 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 
 Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/00](roadmap/00-roadmap.md#ordem-de-execução-e-entregas).
 
-7. [claude/gemini] Revisar resultados físicos em `checks/m2-device-test.md` antes de instalar rootfs: avisos UFS/clocks, Bluetooth -110, toque real/DRM e procedimento de retorno com a GPT alterada. **lk3rd já instalado; não repetir a gravação inicial pelo mapa antigo.** `sda13=lk3rd/2 MiB`, `sda33=boot/57 MiB`, `sda32=userdata`. Nenhum rootfs gravado.
+7. [claude/gemini] Revisar evidência dos testes e retorno em `checks/return-lineage.md`/`checks/session-summary-2026-11-17.md`. LineageOS já restaurado; boot=sda13/59 MiB, sem lk3rd ou rootfs Linux instalado. Eventual retomada nativa exige considerar a condição UFS e preparar novamente a rota de teste.
 9. [claude/gemini] (depois do teste em RAM do M2) DVFS da GPU: ACPM G3D = id 10 + tabela de 7 frequências, ver `roadmap/07` linha "Frequência variável da GPU". Primeiro só leitura de `get_rate(10)` no aparelho.
 12. [claude] (no aparelho, depois do M2) testes por recurso, na ordem dos relatórios em `research/`: GPU DVFS só leitura, C2 na cpu7, timeouts I2C, BT com 115200/RTS, Wi-Fi com BDF próprio (exige `CONFIG_EXTRA_FIRMWARE` sem o `board-2.bin`), suspensão E1-E4, PWM antes do `0101`.
 8. [claude] Revisar logs/artefatos gerados em M2–M4 no aparelho real antes de avançar para M5.
 
 ## Feito, aguardando revisão
+
+- [codex] commit `83c747b`: retorno ao LineageOS concluído; boot original de 59 MiB + GPTs restaurados com readback, somente entradas 13/33 alteradas, Recovery/DTBO iguais aos backups. Android 17/Lineage 24.0 boot_completed=1, SurfaceFlinger running, boot=sda13, lk3rd removido. Sem formatação userdata; snapshots e resultados no HD verificados. Resumo `checks/session-summary-2026-11-17.md`, evidência `checks/return-lineage.md`.
 
 - [codex] commit `5f259df`: confirmação independente de A/B=0x0B encontrada no log Samsung/LineageOS Recovery anterior aos testes (`LT: 0xbb`), fórmula validada na mesma revisão 97369af7bbd6. Evidência e opções em `research/ufs-health.md`; sem nova inicialização/escrita no telefone. Indicador preexistente, sem reparo por patch; instalação persistente ainda depende da estratégia/condição do armazenamento.
 
@@ -69,7 +75,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 
 <!-- - [revisor] <sha ou arquivo>: problema → ação esperada. Marque [x] quando o autor resolver. -->
 - [ ] [codex] Teste físico `c376fde`: Bluetooth segue com HCI -110. UFS/clocks diagnosticados em `research/ufs-clocks.md` (link HS-G3 apesar dos `dme-set`; sem escrita). CPU/MPIDR e reguladores dummy ainda sem laudo. `systemd=running` e enumeração DRM não comprovam aceleração gráfica nem estabilidade.
-- [ ] [codex] GPT alterada pelo próprio lk3rd (`automatic_repartitioning.c`): antiga BOOT de 59 MiB virou lk3rd de 2 MiB + boot de 57 MiB. Revisar restauração pelo mapa atual; não passar backup antigo de 59 MiB para a nova boot de 57 MiB, nem usar `sda13` como boot Linux. Recovery preservado; retorno completo ao LineageOS ainda não ensaiado.
+- [x] [codex] GPT dividida por lk3rd e incompatibilidade do backup de 59 MiB com slot de 57 MiB: restauração concluída em `83c747b`, região original e GPTs verificadas; LineageOS iniciou, boot voltou a sda13/59 MiB, lk3rd/entrada33 removidos. Ver `checks/return-lineage.md`.
 - [x] [codex] `de7cc81`, `manifests/m2-runbook.md`: comando passava TAR Odin como conteúdo BOOT no Heimdall; teste só buscava palavras → imagem crua + teste do comando e equivalência do payload, corrigidos em `e28e769`. Transporte no telefone permanece pendente.
 - [ ] [claude] revisão de `019c589..faa2c16` (17/11/2026): aprovada. Reproduzido no computador: build 17/17, instalador 10/10, flash simulado 18/18, artefatos 56/56; Mesa `-2` com SHA `4a62c5a3…`, `depend = spirv-tools` e `NEEDED libSPIRV-Tools.so`; `r8s-ram.img` 65.513.472 B. Conferido no Omarchy do host: o hook `omarchy-update-pacman-guard` aceita `OMARCHY_ALLOW_DIRECT_PACMAN=1`, `omarchy-system-lock` existe e não bloqueia, e `/etc/os-release` não pertence a pacote (`/usr/lib/os-release` vem de `filesystem`). Pendente: `adb_require_single_root_device` exige `ro.product.model=SM-G780F` e `ro.product.device=r8s`, valores não lidos no LineageOS Recovery. Se forem outros, `flash-boot.sh`/`restore-stock.sh` recusam (falha segura). Ação: ler `getprop` no recovery antes de depender desses scripts.
 - [x] [codex] `packaging/build-env/build-arch-rootfs.sh`: apagava a imagem anterior antes de instalar pacotes e removia o chroot mesmo após falha de unmount → staging até fsck/tamanho aprovados e limpeza sem percorrer mounts; corrigido em `e86502e`. Renames de imagem/manifestos não são transação; conferir checksum antes de usar.
