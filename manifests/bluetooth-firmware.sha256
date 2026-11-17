@@ -1,0 +1,4 @@
+# Local vendor extraction, 2026-11-17; provenance/versions: research/wifi-bt-firmware.md.
+# Private blobs are not included in Git; redistribution permission not established.
+8427ba9487d322c5e3e618b75ff51c0103308d425e6eb21996f0493b0969dcbb  blobs/r8s-device/vendor/root/firmware/htbtfw20.tlv
+6f66ff12e95c7679f4894fffb0db77c165053d02356d81471474fb2d525fc15c  blobs/r8s-device/vendor/root/firmware/htnv20.bin

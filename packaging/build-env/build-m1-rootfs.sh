@@ -42,6 +42,9 @@ build_slim() {
     -e KVER="$kernelrelease" \
     -e MOD_TAR="/work/out/modules-$kernelrelease.tar.gz" \
     debian:trixie bash -euo pipefail -c '
+sha256sum --strict -c /work/out/boot/kernel.sha256
+# Snapshot before the build; recheck before publishing to catch changed inputs.
+cp /work/out/boot/kernel.sha256 /tmp/slim-kernel.sha256
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq binutils busybox-static cpio debootstrap gzip kmod >/dev/null
@@ -116,7 +119,10 @@ rm -rf "$W/lib/modules/$KVER"/kernel/{fs/btrfs,sound,net/can,net/nfc,net/dsa,dri
 depmod -b "$W" "$KVER"
 
 ( cd "$W" && find . -print0 | cpio --null -o -H newc --quiet ) | gzip -9 > "$OUT"
+cmp /tmp/slim-kernel.sha256 /work/out/boot/kernel.sha256
+sha256sum --strict -c /tmp/slim-kernel.sha256
 sha256sum "$OUT" | tee /work/out/boot/initramfs-slim.sha256
+cp /tmp/slim-kernel.sha256 /work/out/boot/initramfs-slim.kernel.sha256
 awk -v b=$(stat -c%s "$OUT") "BEGIN{printf \"initramfs-slim.cpio.gz: %.1f MB (budget <= 35 MB)\n\", b/1048576}"
 ' 2>&1 | tee "$ROOT/logs/m1-rootfs-slim.log"
 }

@@ -38,7 +38,7 @@ echo " size      : $img_bytes bytes ($(awk -v a="$img_bytes" -v b="$part_bytes" 
 echo " sha256    : $img_hash"
 echo " battery   : ${batt}%"
 
-[ "$img_bytes" -le "$part_bytes" ] || { echo " ABORT: image larger than partition." >&2; exit 7; }
+[ "$img_bytes" -gt 0 ] && [ "$img_bytes" -le "$part_bytes" ] || { echo " ABORT: image empty or larger than partition." >&2; exit 7; }
 [ "${batt:-0}" -ge 20 ] || { echo " ABORT: battery below 20%." >&2; exit 8; }
 
 stock_boot="$BK/stock-boot.img"
@@ -78,9 +78,9 @@ if [ "$DO_WRITE" != "1" ]; then
   exit 0
 fi
 
+adb_push_verified "$IMG" /data/local/tmp/flash-boot.img "$img_hash"
 echo " WRITING..."
-adb_cmd push "$IMG" /data/local/tmp/flash-boot.img >/dev/null
-adb_cmd shell "dd if=/dev/zero of=$dev bs=1M count=$((part_bytes/1048576)) conv=fsync 2>/dev/null; \
+adb_cmd shell "dd if=/dev/zero of=$dev bs=1M count=$((part_bytes/1048576)) conv=fsync 2>/dev/null && \
                dd if=/data/local/tmp/flash-boot.img of=$dev bs=1M conv=fsync && sync && echo 3 > /proc/sys/vm/drop_caches"
 back=$(adb_cmd shell "dd if=$dev bs=1 count=$img_bytes 2>/dev/null | sha256sum" | awk '{print $1}')
 adb_cmd shell "rm -f /data/local/tmp/flash-boot.img"

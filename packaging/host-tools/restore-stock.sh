@@ -70,8 +70,8 @@ for p in $TARGETS; do
     continue
   fi
 
+  adb_push_verified "$img" "/data/local/tmp/restore-$p.img" "$have"
   echo " WRITING..."
-  adb_cmd push "$img" "/data/local/tmp/restore-$p.img" >/dev/null
   adb_cmd shell "dd if=/data/local/tmp/restore-$p.img of=$dev bs=1M conv=fsync && sync && echo 3 > /proc/sys/vm/drop_caches"
   back=$(adb_cmd shell "dd if=$dev bs=512 count=$sectors 2>/dev/null | sha256sum" | awk '{print $1}')
   adb_cmd shell "rm -f /data/local/tmp/restore-$p.img"

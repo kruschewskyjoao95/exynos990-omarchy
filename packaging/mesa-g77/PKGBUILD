@@ -6,7 +6,7 @@
 pkgname=mesa-g77
 _commit='7d6bb09d5b59ec5af1a58971f34390a62943bfe0'
 pkgver=26.3.0_devel.7d6bb09d
-pkgrel=1
+pkgrel=2
 pkgdesc='Mesa 26.3.0-devel Panfrost + PanVK (Mali-G77 / Valhall v9) side-by-side build in /opt/mesa-g77'
 arch=('aarch64')
 url='https://gitlab.freedesktop.org/mesa/mesa'
@@ -31,6 +31,7 @@ depends=(
   'libxshmfence'
   'libxxf86vm'
   'llvm-libs'
+  'spirv-tools'
   'systemd-libs'
   'wayland'
   'zlib'

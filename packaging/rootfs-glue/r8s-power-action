@@ -15,9 +15,7 @@ case "$ACTION" in
     if hyprctl -j monitors 2>/dev/null | grep -q '"dpmsStatus":[[:space:]]*false'; then
       hyprctl dispatch dpms on >/dev/null 2>&1 || true
     else
-      if command -v omarchy-lock-screen >/dev/null 2>&1; then
-        omarchy-lock-screen >/dev/null 2>&1 &
-      fi
+      omarchy-system-lock >/dev/null 2>&1 || exit 1
       hyprctl dispatch dpms off >/dev/null 2>&1 || true
     fi
     ;;
