@@ -6,7 +6,18 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 IMAGE="${R8S_KBUILD_IMAGE:-r8s-kbuild:trixie}"
 NPROC="${R8S_NPROC:-$(nproc)}"
-MODE="${1:-all}" # all | lk3rd | kernel | dtbs | package
+MODE="${1:-all}" # all | lk3rd | kernel | package
+PATCHSET="${R8S_KERNEL_PATCHSET:-baseline}" # baseline | series
+
+case "$MODE" in
+  all|lk3rd|kernel|package) ;;
+  dtbs) echo "ERROR: dtbs-only disabled; run a full kernel build, then regenerate initramfs/rootfs and package" >&2; exit 2 ;;
+  *) echo "unknown mode: $MODE" >&2; exit 2 ;;
+esac
+case "$PATCHSET" in
+  baseline|series) ;;
+  *) echo "unknown R8S_KERNEL_PATCHSET: $PATCHSET (expected baseline or series)" >&2; exit 2 ;;
+esac
 
 mkdir -p "$ROOT/out/work" "$ROOT/out/boot" "$ROOT/out/staging" "$ROOT/logs"
 
@@ -19,6 +30,7 @@ docker run --rm \
   -u "$(id -u):$(id -g)" \
   -v "$ROOT:/work" \
   -e MODE="$MODE" \
+  -e PATCHSET="$PATCHSET" \
   -e NPROC="$NPROC" \
   "$IMAGE" bash -euo pipefail -c '
 export HOME=/tmp
@@ -39,6 +51,20 @@ build_lk3rd() {
 
 prepare_kernel_tree() {
   echo "== [M1] Preparing & patching kernel 6.12.0-rc5 (r8s) =="
+  PATCHES=(0100-arm64-dts-exynos990-r8s-6gb-memory-map.patch)
+  if [ "$PATCHSET" = series ]; then
+    mapfile -t PATCHES < /work/packaging/kernel-patches/series
+  fi
+  LOCAL_PATCHES=()
+  for p in "${PATCHES[@]}"; do
+    case "$p" in ""|\#*) continue ;; esac
+    if [[ ! "$p" =~ ^[0-9][a-zA-Z0-9._-]*\.patch$ ]] || [ ! -s "/work/packaging/kernel-patches/$p" ]; then
+      echo "ERROR: invalid or missing local patch: $p" >&2
+      exit 1
+    fi
+    LOCAL_PATCHES+=("$p")
+  done
+  [ "${#LOCAL_PATCHES[@]}" -gt 0 ] || { echo "ERROR: empty patch series" >&2; exit 1; }
   rm -rf /work/out/work/linux
   rsync -a --exclude=".git" /work/sources/linux/ /work/out/work/linux/
   cd /work/out/work/linux
@@ -48,12 +74,10 @@ prepare_kernel_tree() {
     echo "Applying $(basename "$p")"
     git apply "$p"
   done
-  if compgen -G "/work/packaging/kernel-patches/*.patch" > /dev/null; then
-    for p in /work/packaging/kernel-patches/*.patch; do
-      echo "Applying local $(basename "$p")"
-      git apply "$p"
-    done
-  fi
+  for p in "${LOCAL_PATCHES[@]}"; do
+    echo "Applying local $p"
+    git apply "/work/packaging/kernel-patches/$p"
+  done
   [ -f arch/arm64/boot/dts/exynos/exynos990-r8s.dts ] || {
     echo "ERROR: exynos990-r8s.dts missing after patches" >&2
     exit 1
@@ -63,21 +87,11 @@ prepare_kernel_tree() {
   cp /work/blobs/firmware/ath11k/QCA6390/hw2.0/{amss.bin,m3.bin,board-2.bin} firmware/ath11k/QCA6390/hw2.0/
 
   cp /work/sources/port/kernel/config/r8s.config .config
+  if [ "$PATCHSET" = series ]; then
+    scripts/config -e DEVFREQ_THERMAL
+  fi
   make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
   REL=$(make -s ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- kernelrelease)
-  echo "kernelrelease=$REL" > /work/out/boot/kernel-release.txt
-}
-
-build_dtbs() {
-  prepare_kernel_tree
-  [ -f /work/out/boot/Image ] && [ -f "/work/out/modules-$REL.tar.gz" ] || {
-    echo "ERROR: missing Image or modules-$REL.tar.gz; run full kernel build" >&2
-    exit 1
-  }
-  echo "== [M1] Compiling r8s DTB (-j$NPROC) =="
-  make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j"$NPROC" exynos/exynos990-r8s.dtb
-  cp arch/arm64/boot/dts/exynos/exynos990-r8s.dtb /work/out/boot/exynos990-r8s.dtb
-  sha256sum /work/out/boot/Image /work/out/boot/exynos990-r8s.dtb "/work/out/modules-$REL.tar.gz" | tee /work/out/boot/kernel.sha256
 }
 
 build_kernel() {
@@ -93,6 +107,7 @@ build_kernel() {
   make -s ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- INSTALL_MOD_PATH=/work/out/staging/modstage INSTALL_MOD_STRIP=1 modules_install
   rm -f "/work/out/staging/modstage/lib/modules/$REL/build" "/work/out/staging/modstage/lib/modules/$REL/source"
   tar --owner=0 --group=0 -C "/work/out/staging/modstage/lib/modules/$REL" -czf "/work/out/modules-$REL.tar.gz" .
+  echo "kernelrelease=$REL" > /work/out/boot/kernel-release.txt
   sha256sum /work/out/boot/Image /work/out/boot/exynos990-r8s.dtb "/work/out/modules-$REL.tar.gz" | tee /work/out/boot/kernel.sha256
 }
 
@@ -167,7 +182,6 @@ package_uniloader() {
 case "$MODE" in
   lk3rd) build_lk3rd ;;
   kernel) build_kernel ;;
-  dtbs) build_dtbs ;;
   package) package_uniloader ;;
   all) build_lk3rd; build_kernel; package_uniloader ;;
   *) echo "unknown mode: $MODE" >&2; exit 2 ;;

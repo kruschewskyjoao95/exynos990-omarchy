@@ -51,6 +51,8 @@ Fontes e receitas de M1 podem avançar enquanto M0 depende do aparelho. A análi
 - [x] Construir initramfs mínimo para diagnóstico, imagem de boot e rootfs Arch ARM mínimo (≤ 700 MiB, com `r8s-growroot`); registrar tamanho e hash de cada saída. Evidência: [m1-artifacts.md](../manifests/m1-artifacts.md) (`lk3rd-r8s.img` 2097152 B, `r8s-ram.img` 65509376 B ≤ 64 MiB, `r8s-mini.img` 28801024 B ≤ 64 MiB, `r8s-ufs.img` 27785216 B, `initramfs-slim.cpio.gz` 37725548 B, `initramfs-mini.cpio.gz` 1016955 B, `ufs-root.img` 734003200 B / 700 MiB com `e2fsck -fn` ok, módulos `0:0`, `softdog`/pstore/watchdog e 160 pacotes sem kernel genérico). Nada testado no aparelho.
 - [ ] Revisar uso de containers privilegiados, dispositivos loop, caminhos fixos, permissões e serviços de diagnóstico. Em revisão (item 5 de `COORDENACAO.md` para serviços Arch/Omarchy e repetição em ambiente limpo).
 
+**Correções de receitas (17/11/2026, codex):** `build-m1-kernel.sh` usa port + `0100` por padrão; `R8S_KERNEL_PATCHSET=series` aplica a lista experimental na ordem e habilita `DEVFREQ_THERMAL`. `0101` permanece fora da lista. O modo `dtbs` foi bloqueado para impedir combinar DTB experimental com kernel anterior. `checks/test-build-recipes.py`: 8 testes locais com compilador/Docker simulados; verificação dos artefatos existentes: 55/55 PASS. Nenhuma imagem foi recompilada nesta correção; a compilação integral da série e a regeneração de initramfs/rootfs continuam pendentes.
+
 **Entrega:** receita executável revisada e artefatos rastreáveis. **Aprovação:** build completo repetido em ambiente limpo com versões fixadas; registrar diferenças de hash se a construção ainda não for determinística. Referências: [base técnica](01-base-s20fe.md) e [cadeia de artefatos](05-build-e-instalacao.md).
 
 ## M2 — Reproduzir o Linux básico no aparelho
@@ -79,6 +81,7 @@ Fontes e receitas de M1 podem avançar enquanto M0 depende do aparelho. A análi
 - [ ] Comparar receitas e patches dos pacotes Omarchy com os pacotes Arch ARM; nome igual não comprova equivalência. Fixar um conjunto compatível conforme [06](06-pacotes-e-desktop.md).
 - [ ] Instalar o Omarchy via `pacman` sobre o Arch ARM mínimo já comprovado (depois do `r8s-growroot`), conservando as imagens recuperáveis. Receita pós-boot `packaging/omarchy/install-omarchy-r8s.sh` (`--dry-run` e `bash -n` ok) aguardando revisão e M2/M3.
 - [ ] Integrar suporte r8s, serviços, firmware e Mesa; repetir os ensaios de M2/M3 nessa base antes de adicionar o desktop completo.
+  - Receita Arch atualizada em 17/11/2026: inclui `qca/htbtfw20.tlv` e `qca/htnv20.bin` do vendor local, com hashes fixados em `manifests/bluetooth-firmware.sha256` e rejeição de arquivos ausentes/corrompidos antes do build. O `ufs-root.img` existente ainda não contém esses arquivos; regeneração e teste Bluetooth no aparelho pendentes.
 - [ ] Portar o conjunto coerente de compositor, shell, temas e comandos do Omarchy para a revisão escolhida. Resolver dependências entre configurações, pacotes e caminhos.
 - [ ] Adaptar comandos de energia, rede, brilho e sessão ao telefone; manter fora da imagem os componentes incompatíveis, com justificativa explícita.
 - [ ] Integrar teclado virtual e controles por toque; completar o fluxo Wi-Fi → launcher → navegador → digitação → terminal → alternância de apps → desligamento.

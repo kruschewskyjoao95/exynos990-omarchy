@@ -36,6 +36,9 @@ for f in "${REQUIRED_GLUE[@]}"; do
   [ -f "$GLUE_DIR/$f" ] || { echo "missing $GLUE_DIR/$f" >&2; exit 1; }
 done
 
+# Vendor blobs remain local; reject missing or changed firmware before building.
+(cd "$ROOT" && sha256sum --strict -c manifests/bluetooth-firmware.sha256)
+
 if [ "$SIZE_MB" -gt 700 ]; then
   echo "SIZE_MB=$SIZE_MB exceeds 700 MiB safe budget for lk3rd 768 MiB fastboot buffer" >&2
   exit 2
@@ -82,6 +85,8 @@ docker run --rm --privileged \
   -e KVER="$kernelrelease" \
   -e MOD_TAR="/work/out/modules-$kernelrelease.tar.gz" \
   archlinux:latest bash -euo pipefail -c '
+cd /work
+sha256sum --strict -c manifests/bluetooth-firmware.sha256
 echo "== [Item 3] Preparing host pacman + archlinuxarm keyring =="
 for cmd in curl bsdtar mkfs.ext4 e2fsck losetup pacman pacman-key zstd xz; do
   command -v "$cmd" >/dev/null || { echo "missing tool: $cmd" >&2; exit 1; }
@@ -161,6 +166,9 @@ chroot "$MNT" depmod "$KVER"
 mkdir -p "$MNT/usr/lib/firmware/ath11k/QCA6390/hw2.0"
 cp /work/blobs/firmware/ath11k/QCA6390/hw2.0/{amss.bin,m3.bin,board-2.bin,Notice.txt} \
   "$MNT/usr/lib/firmware/ath11k/QCA6390/hw2.0/"
+for f in htbtfw20.tlv htnv20.bin; do
+  install -D -m 0644 "/work/blobs/r8s-device/vendor/root/firmware/$f" "$MNT/usr/lib/firmware/qca/$f"
+done
 
 echo "== [Item 3] Configuring pacman, fstab, USB gadget, growroot, watchdog, pstore, power & user =="
 echo "r8s-arch" > "$MNT/etc/hostname"
