@@ -21,12 +21,12 @@ Objetivo: instalar um sistema nativo derivado do Omarchy no Samsung **SM-G780F /
 
 ## Trabalho com mais de um agente
 
-Mais de um agente trabalha neste diretório. O quadro comum é [COORDENACAO.md](COORDENACAO.md); o histórico é o git. Papéis, salvo nova instrução do proprietário: `[gemini]` (Antigravity) executa builds, scripts e clones; `[claude]` (Claude Code) revisa com `git log`/`git diff` contra as fontes; o proprietário decide o que é irreversível.
+Mais de um agente trabalha neste diretório. O quadro comum é [COORDENACAO.md](COORDENACAO.md); o histórico é o git. Papéis, salvo nova instrução do proprietário: `[gemini]` (Antigravity) executa builds, scripts e clones; `[claude]` (Claude Code) revisa com `git log`/`git diff` contra as fontes e corrige os achados; o proprietário decide o que é irreversível.
 
 1. Ao iniciar, leia `COORDENACAO.md` e `git log --oneline -10`.
 2. Antes de alterar arquivos, registre em "Em andamento": agente, tarefa e caminhos. Não altere caminhos que outro agente registrou.
 3. Ao terminar uma tarefa, faça um commit pequeno com mensagem descritiva e mova o item para "Feito, aguardando revisão" com o SHA.
-4. Ao revisar, anote o problema em "Revisão" com arquivo e ação esperada. Não corrija o trabalho do outro agente; o autor corrige e marca `[x]`.
+4. Ao revisar, anote o problema em "Revisão" com arquivo e ação esperada. `[claude]` pode corrigir (instrução do proprietário, 17/11/2026), registrando antes os caminhos em "Em andamento" e evitando os que `[gemini]` registrou; quem corrige marca `[x]` com o SHA. `[gemini]` não reverte essas correções sem anotar o motivo em "Revisão".
 5. Escritas no telefone (flash, unlock, restore) só com ordem explícita do proprietário. Combinação entre agentes não autoriza.
 
 ## Evidência de progresso

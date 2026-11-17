@@ -1,6 +1,6 @@
 # Roadmap de implementação
 
-Data: 16/11/2026. Alvo: SM-G780F / r8s. Todas as etapas de implementação estão **pendentes**. A pesquisa inicial está concluída, sujeita à revalidação ao fixar commits.
+Data: 16/11/2026. Alvo: SM-G780F / r8s. M0 e M1 em andamento (ver itens); M2 em diante **pendentes**. A pesquisa inicial está concluída, sujeita à revalidação ao fixar commits.
 
 ## Entrega pretendida
 
@@ -26,20 +26,20 @@ Fontes e receitas de M1 podem avançar enquanto M0 depende do aparelho. A análi
 
 ## M0 — Inventário e recuperação
 
-- [ ] Registrar Android/ROM atual, versão do bootloader, armazenamento, estado de desbloqueio, acesso a recovery/Download e disponibilidade de root. Modelo já confirmado; não presumir os demais itens.
-- [ ] Copiar dados pessoais para fora do telefone e verificar amostras restauradas.
-- [ ] Obter firmware stock correspondente e registrar ferramentas e procedimento de recuperação aplicáveis ao estado atual.
-- [ ] Obter backups necessários por método compatível com os privilégios disponíveis; registrar tamanhos e SHA-256. Não considerar um backup dentro do telefone suficiente.
+- [x] Registrar Android/ROM atual, versão do bootloader, armazenamento, estado de desbloqueio, acesso a recovery/Download e disponibilidade de root. Modelo já confirmado; não presumir os demais itens. Evidência: [inventário](03-primeira-sessao.md#inventário-atualizado-em-17112026), 17/11/2026 (LineageOS 24.0, bootloader `G780FXXSOFYJ2` desbloqueado, sem `adb root`).
+- [ ] Copiar dados pessoais para fora do telefone e verificar amostras restauradas. Inventário registra "sem dados pessoais a preservar"; falta confirmação do proprietário.
+- [x] Obter firmware stock correspondente e registrar ferramentas e procedimento de recuperação aplicáveis ao estado atual. Evidência: firmware `G780FXXSOFYJ2` (`ZTO`) via `samloader`, hashes em [sources.md](../manifests/sources.md); Download mode registrado no inventário.
+- [ ] Obter backups necessários por método compatível com os privilégios disponíveis; registrar tamanhos e SHA-256. Não considerar um backup dentro do telefone suficiente. Pendente: sem `adb root` não há cópia de `efs`/`sec_efs` (IMEI), que o firmware stock não restaura.
 - [ ] Inspecionar as fontes de flash e restauração antes de qualquer execução; não usar endereços de partição copiados sem conferir o aparelho.
 
 **Entrega:** inventário e plano de recuperação. **Aprovação:** artefatos acessíveis no computador e modo de recuperação alcançável. A restauração completa será validada no ciclo de instalação; só entrar nesse ciclo aceitando a perda de dados e efeitos irreversíveis descritos pelo port.
 
 ## M1 — Fontes e build reproduzível
 
-- [ ] Fixar SHAs do port, kernel, Mesa, lk3rd, uniLoader e Omarchy; guardar procedência e versões das ferramentas.
+- [x] Fixar SHAs do port, kernel, Mesa, lk3rd, uniLoader e Omarchy; guardar procedência e versões das ferramentas. Evidência: [sources.md](../manifests/sources.md), [host-tools.md](../manifests/host-tools.md).
 - [ ] Reproduzir primeiro o build Debian ARM64 documentado; revisar os scripts para o Linux do computador e separar diretórios de saída dos discos reais.
 - [ ] Conferir patches, DTB, firmware, módulos e imagem como um conjunto da mesma compilação.
-- [ ] Construir initramfs mínimo para diagnóstico, imagem de boot e rootfs básico; registrar tamanho e hash de cada saída.
+- [ ] Construir initramfs mínimo para diagnóstico, imagem de boot e rootfs básico; registrar tamanho e hash de cada saída. Parcial em 17/11/2026: `out/boot/lk3rd-r8s.img` (2097152 bytes, SHA-256 `48a15319…86ab`) e `.tar` para Download mode compilados via `packaging/build-env/`; kernel `6.12.0-rc5-next-20241104-r8s` em compilação; initramfs e rootfs pendentes. Nada testado no aparelho.
 - [ ] Revisar uso de containers privilegiados, dispositivos loop, caminhos fixos, permissões e serviços de diagnóstico.
 
 **Entrega:** receita executável revisada e artefatos rastreáveis. **Aprovação:** build completo repetido em ambiente limpo com versões fixadas; registrar diferenças de hash se a construção ainda não for determinística. Referências: [base técnica](01-base-s20fe.md) e [cadeia de artefatos](05-build-e-instalacao.md).
@@ -105,6 +105,6 @@ Rastreamento inicial de arquivos e provas por recurso: [LineageOS e drivers](07-
 
 ## Organização do trabalho
 
-Manter este diretório como projeto de integração. Na implementação, usar checkouts separados dos upstreams, patches pequenos e versões fixadas; criar forks remotos quando houver mudanças concretas a manter. Hoje só existem documentos. Não duplicar árvores inteiras nem desenvolver drivers novos antes de reproduzir a base.
+Manter este diretório como projeto de integração. Na implementação, usar checkouts separados dos upstreams, patches pequenos e versões fixadas; criar forks remotos quando houver mudanças concretas a manter. Em 17/11/2026 há documentos, manifestos, scripts adaptados com teste simulado e o primeiro build M1 em andamento (`packaging/build-env/`). Não duplicar árvores inteiras nem desenvolver drivers novos antes de reproduzir a base.
 
 Dependências dos testes físicos: M0 + M1 → M2 → M3 → M4 → M5. Pesquisa e preparação no computador podem avançar nas frentes independentes. M6 usa a base de teste de M2 ou posterior, sem bloquear a alpha se as limitações forem explícitas. Planejar por resultados medidos; prazo de calendário só depois de M2.
