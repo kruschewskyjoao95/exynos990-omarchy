@@ -1,0 +1,27 @@
+#!/bin/sh
+# Populate /run/r8s-drm.env for display-manager (SDDM) and system Wayland services
+# that do not inherit /etc/profile.d or ~/.config/uwsm/env.
+set -eu
+
+OUT=/run/r8s-drm.env
+TMP="${OUT}.tmp.$$"
+
+{
+  printf 'PAN_MESA_DEBUG=noafbc\n'
+  if [ -x /usr/local/bin/r8s-detect-drm ]; then
+    drm=$(/usr/local/bin/r8s-detect-drm || true)
+    [ -n "$drm" ] && printf 'AQ_DRM_DEVICES=%s\n' "$drm"
+  fi
+  if [ -d /opt/mesa-g77 ]; then
+    printf 'LD_LIBRARY_PATH=/opt/mesa-g77/lib\n'
+    printf '__EGL_VENDOR_LIBRARY_FILENAMES=/opt/mesa-g77/share/glvnd/egl_vendor.d/50_mesa.json\n'
+    printf 'LIBGL_DRIVERS_PATH=/opt/mesa-g77/lib/dri\n'
+    printf 'GBM_BACKENDS_PATH=/opt/mesa-g77/lib/gbm\n'
+    printf 'VK_DRIVER_FILES=/opt/mesa-g77/share/vulkan/icd.d/panfrost_icd.aarch64.json\n'
+    printf 'VK_ICD_FILENAMES=/opt/mesa-g77/share/vulkan/icd.d/panfrost_icd.aarch64.json\n'
+    printf 'PAN_I_WANT_A_BROKEN_VULKAN_DRIVER=1\n'
+  fi
+} > "$TMP"
+
+chmod 0644 "$TMP"
+mv "$TMP" "$OUT"

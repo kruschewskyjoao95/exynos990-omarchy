@@ -1,0 +1,11 @@
+[Unit]
+Description=r8s CPU frequency pin and RCU stall timeout policy
+After=sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/r8s-safe-freq
+
+[Install]
+WantedBy=multi-user.target

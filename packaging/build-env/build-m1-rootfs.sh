@@ -1,37 +1,47 @@
 #!/usr/bin/env bash
-# Reproducible M1 builder for the Debian slim diagnostic initramfs (RAM test only).
+# Reproducible M1 builder for RAM-only diagnostic initramfs images:
+#   slim (default): Debian trixie minbase + systemd + kmod + USB gadget (r8s-ram.img)
+#   mini:           Tiny busybox-static liveness initramfs + DECON trigger + USB gadget (r8s-mini.img)
+#   all:            Build both initramfs-slim.cpio.gz and initramfs-mini.cpio.gz
 # Full Debian rootfs was removed per 17/11/2026 decision; persistent rootfs is Arch ARM.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-: "${ROOTPW:?set ROOTPW (no default password baked in)}"
-REL_FILE="$ROOT/out/boot/kernel-release.txt"
+MODE="${1:-slim}" # slim | mini | all
 
-if [ ! -f "$REL_FILE" ]; then
-  echo "missing $REL_FILE; run build-m1-kernel.sh first" >&2
-  exit 1
-fi
-# shellcheck source=/dev/null
-. "$REL_FILE"
-MOD_TAR="$ROOT/out/modules-$kernelrelease.tar.gz"
-if [ ! -f "$MOD_TAR" ]; then
-  echo "missing modules tarball: $MOD_TAR" >&2
-  exit 1
-fi
-if [ ! -f "$ROOT/packaging/rootfs-glue/r8s-usb-gadget" ]; then
-  echo "missing $ROOT/packaging/rootfs-glue/r8s-usb-gadget" >&2
-  exit 1
-fi
+case "$MODE" in
+  slim|mini|all) ;;
+  *) echo "usage: $0 [slim|mini|all]" >&2; exit 2 ;;
+esac
 
 mkdir -p "$ROOT/out/boot" "$ROOT/logs"
 
-docker run --rm --privileged \
-  --platform linux/arm64 \
-  -v "$ROOT:/work" \
-  -e ROOTPW="$ROOTPW" \
-  -e KVER="$kernelrelease" \
-  -e MOD_TAR="/work/out/modules-$kernelrelease.tar.gz" \
-  debian:trixie bash -euo pipefail -c '
+build_slim() {
+  : "${ROOTPW:?set ROOTPW (no default password baked in)}"
+  local rel_file="$ROOT/out/boot/kernel-release.txt"
+  if [ ! -f "$rel_file" ]; then
+    echo "missing $rel_file; run build-m1-kernel.sh first" >&2
+    exit 1
+  fi
+  # shellcheck source=/dev/null
+  . "$rel_file"
+  local mod_tar="$ROOT/out/modules-$kernelrelease.tar.gz"
+  if [ ! -f "$mod_tar" ]; then
+    echo "missing modules tarball: $mod_tar" >&2
+    exit 1
+  fi
+  if [ ! -f "$ROOT/packaging/rootfs-glue/r8s-usb-gadget" ]; then
+    echo "missing $ROOT/packaging/rootfs-glue/r8s-usb-gadget" >&2
+    exit 1
+  fi
+
+  docker run --rm --privileged \
+    --platform linux/arm64 \
+    -v "$ROOT:/work" \
+    -e ROOTPW="$ROOTPW" \
+    -e KVER="$kernelrelease" \
+    -e MOD_TAR="/work/out/modules-$kernelrelease.tar.gz" \
+    debian:trixie bash -euo pipefail -c '
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq binutils busybox-static cpio debootstrap gzip kmod >/dev/null
@@ -98,7 +108,8 @@ systemctl set-default multi-user.target
 CHROOT
 
 mkdir -p "$W/lib/modules/$KVER"
-tar -xzf "$MOD_TAR" -C "$W/lib/modules/$KVER"
+tar --no-same-owner -xzf "$MOD_TAR" -C "$W/lib/modules/$KVER"
+chown -R 0:0 "$W/lib/modules/$KVER"
 rm -rf "$W/lib/modules/$KVER"/kernel/drivers/gpu/drm/{nouveau,amd,radeon,i915} 2>/dev/null || true
 rm -rf "$W/lib/modules/$KVER"/kernel/drivers/net/{ethernet,wireless/{intel,ath/ath10k,marvell,realtek,mediatek}} 2>/dev/null || true
 rm -rf "$W/lib/modules/$KVER"/kernel/{fs/btrfs,sound,net/can,net/nfc,net/dsa,drivers/fpga} 2>/dev/null || true
@@ -108,3 +119,93 @@ depmod -b "$W" "$KVER"
 sha256sum "$OUT" | tee /work/out/boot/initramfs-slim.sha256
 awk -v b=$(stat -c%s "$OUT") "BEGIN{printf \"initramfs-slim.cpio.gz: %.1f MB (budget <= 35 MB)\n\", b/1048576}"
 ' 2>&1 | tee "$ROOT/logs/m1-rootfs-slim.log"
+}
+
+build_mini() {
+  docker run --rm --privileged \
+    --platform linux/arm64 \
+    -v "$ROOT:/work" \
+    debian:trixie bash -euo pipefail -c '
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
+apt-get install -y -qq busybox-static cpio gzip >/dev/null
+
+echo "== [M1] Building minimal busybox liveness initramfs (initramfs-mini.cpio.gz) =="
+W=/tmp/mini
+OUT=/work/out/boot/initramfs-mini.cpio.gz
+rm -rf "$W"
+mkdir -p "$W"/{bin,sbin,proc,sys,dev,tmp,run,etc,root}
+cp /bin/busybox "$W/bin/busybox"
+chmod 0755 "$W/bin/busybox"
+
+cat > "$W/init" <<'\''EOF'\''
+#!/bin/busybox sh
+/bin/busybox --install -s /bin 2>/dev/null
+mount -t proc     none /proc
+mount -t sysfs    none /sys
+mount -t devtmpfs none /dev 2>/dev/null || true
+mount -t configfs none /sys/kernel/config 2>/dev/null || true
+mkdir -p /dev/pts && mount -t devpts none /dev/pts 2>/dev/null || true
+
+echo "===================================================" > /dev/kmsg
+echo " r8s mini initramfs: KERNEL IS ALIVE"               > /dev/kmsg
+echo "===================================================" > /dev/kmsg
+
+# Re-arm the DECON hardware trigger so the bootloader-lit panel keeps scanning.
+if [ -e /dev/mem ]; then
+  busybox devmem 0x19050070 32 0x1281 2>/dev/null && \
+    echo "DECON trigger re-armed" > /dev/kmsg
+fi
+
+G=/sys/kernel/config/usb_gadget/r8s
+if [ -d /sys/kernel/config/usb_gadget ]; then
+  mkdir -p "$G"
+  echo 0x1d6b > "$G/idVendor"
+  echo 0x0104 > "$G/idProduct"
+  echo 0xEF > "$G/bDeviceClass"
+  echo 0x02 > "$G/bDeviceSubClass"
+  echo 0x01 > "$G/bDeviceProtocol"
+  mkdir -p "$G/strings/0x409"
+  echo "0123456789"         > "$G/strings/0x409/serialnumber"
+  echo "s20fe-port"         > "$G/strings/0x409/manufacturer"
+  echo "r8s mainline ALIVE" > "$G/strings/0x409/product"
+  mkdir -p "$G/configs/c.1/strings/0x409"
+  echo "acm+net" > "$G/configs/c.1/strings/0x409/configuration"
+  echo 500 > "$G/configs/c.1/MaxPower"
+  mkdir -p "$G/functions/acm.usb0"
+  if mkdir -p "$G/functions/ecm.usb0" 2>/dev/null; then
+    ln -s "$G/functions/ecm.usb0" "$G/configs/c.1/" 2>/dev/null || true
+  elif mkdir -p "$G/functions/rndis.usb0" 2>/dev/null; then
+    ln -s "$G/functions/rndis.usb0" "$G/configs/c.1/" 2>/dev/null || true
+  fi
+  ln -s "$G/functions/acm.usb0" "$G/configs/c.1/" 2>/dev/null || true
+  UDC=$(ls /sys/class/udc 2>/dev/null | head -n1)
+  if [ -n "$UDC" ]; then
+    echo "$UDC" > "$G/UDC" && echo "gadget bound to $UDC" > /dev/kmsg
+  else
+    echo "NO UDC FOUND" > /dev/kmsg
+  fi
+  ip addr add 10.42.0.2/24 dev usb0 2>/dev/null || true
+  ip link set usb0 up 2>/dev/null || true
+fi
+
+while true; do
+  setsid /bin/busybox sh -c '\''exec /bin/busybox sh </dev/ttyGS0 >/dev/ttyGS0 2>&1'\'' 2>/dev/null || true
+  sleep 2
+done &
+
+exec /bin/busybox sh
+EOF
+chmod 0755 "$W/init"
+
+( cd "$W" && find . -print0 | cpio --null -o -H newc --quiet ) | gzip -9 > "$OUT"
+sha256sum "$OUT" | tee /work/out/boot/initramfs-mini.sha256
+awk -v b=$(stat -c%s "$OUT") "BEGIN{printf \"initramfs-mini.cpio.gz: %.2f MB\n\", b/1048576}"
+' 2>&1 | tee "$ROOT/logs/m1-rootfs-mini.log"
+}
+
+case "$MODE" in
+  slim) build_slim ;;
+  mini) build_mini ;;
+  all)  build_mini; build_slim ;;
+esac

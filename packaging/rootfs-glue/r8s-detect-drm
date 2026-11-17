@@ -1,0 +1,18 @@
+#!/bin/sh
+# Detect exynos990 KMS card and Panfrost render/card nodes for Aquamarine/Hyprland.
+DPU=""
+PAN=""
+for u in /sys/class/drm/card*/device/uevent; do
+  [ -r "$u" ] || continue
+  dev="/dev/dri/$(basename "$(dirname "$(dirname "$u")")")"
+  if grep -q "exynos990" "$u" 2>/dev/null; then
+    DPU="$dev"
+  elif grep -qi "panfrost" "$u" 2>/dev/null; then
+    PAN="$dev"
+  fi
+done
+if [ -n "$DPU" ] && [ -n "$PAN" ]; then
+  printf '%s:%s\n' "$DPU" "$PAN"
+elif [ -n "$DPU" ]; then
+  printf '%s\n' "$DPU"
+fi

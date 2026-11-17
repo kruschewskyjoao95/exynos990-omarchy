@@ -1,0 +1,14 @@
+[Unit]
+Description=r8s ramoops heartbeat (postmortem context for auto-reboots)
+DefaultDependencies=no
+After=sysinit.target
+ConditionPathExists=/dev/pmsg0
+
+[Service]
+ExecStart=/usr/local/bin/r8s-heartbeat.sh
+Restart=always
+RestartSec=5
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

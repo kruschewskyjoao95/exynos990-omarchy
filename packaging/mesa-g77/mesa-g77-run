@@ -1,0 +1,75 @@
+#!/bin/sh
+# Launch a command using the side-by-side /opt/mesa-g77 (Panfrost + PanVK) stack.
+# Mirrors sources/port/device/r8s-mesa-glx.sh for Arch Linux ARM (/opt/mesa-g77/lib).
+set -eu
+
+MESA_G77_PREFIX="${MESA_G77_PREFIX:-/opt/mesa-g77}"
+ENABLE_BC=0
+ENABLE_DXVK=0
+ENABLE_BCN_DEBUG=0
+PRINT_ENV=0
+BROKEN_VK="${PAN_I_WANT_A_BROKEN_VULKAN_DRIVER:-1}"
+
+usage() {
+  cat <<'EOF'
+usage: mesa-g77-run [options] [--] <command> [args...]
+
+Options:
+  --bc            Enable PANVK_BC_EMULATION=1 (compute BC1-BC7 texture decode)
+  --dxvk          Enable PANVK_BC_EMULATION=1 and PANVK_DXVK_COMPAT=1
+  --panvk-compat  Alias for --dxvk
+  --bcn-debug     Enable PANVK_DEBUG=bcn
+  --no-broken-vk  Set PAN_I_WANT_A_BROKEN_VULKAN_DRIVER=0
+  --print-env     Print resolved environment variables and exit
+  -h, --help      Show this help
+EOF
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --bc) ENABLE_BC=1; shift ;;
+    --dxvk|--panvk-compat) ENABLE_BC=1; ENABLE_DXVK=1; shift ;;
+    --bcn-debug) ENABLE_BCN_DEBUG=1; shift ;;
+    --no-broken-vk) BROKEN_VK=0; shift ;;
+    --print-env) PRINT_ENV=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    --) shift; break ;;
+    -*) echo "mesa-g77-run: unknown option: $1" >&2; usage >&2; exit 2 ;;
+    *) break ;;
+  esac
+done
+
+if [ "$PRINT_ENV" -eq 0 ] && [ $# -eq 0 ]; then
+  usage >&2
+  exit 2
+fi
+
+case ":${LD_LIBRARY_PATH:-}:" in
+  *:"$MESA_G77_PREFIX/lib":*) ;;
+  *) export LD_LIBRARY_PATH="$MESA_G77_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ;;
+esac
+
+export __EGL_VENDOR_LIBRARY_FILENAMES="$MESA_G77_PREFIX/share/glvnd/egl_vendor.d/50_mesa.json"
+export LIBGL_DRIVERS_PATH="$MESA_G77_PREFIX/lib/dri"
+export GBM_BACKENDS_PATH="$MESA_G77_PREFIX/lib/gbm"
+export VK_DRIVER_FILES="${VK_DRIVER_FILES:-$MESA_G77_PREFIX/share/vulkan/icd.d/panfrost_icd.aarch64.json}"
+export VK_ICD_FILENAMES="${VK_ICD_FILENAMES:-$MESA_G77_PREFIX/share/vulkan/icd.d/panfrost_icd.aarch64.json}"
+export PAN_MESA_DEBUG="${PAN_MESA_DEBUG:-noafbc}"
+export PAN_I_WANT_A_BROKEN_VULKAN_DRIVER="$BROKEN_VK"
+
+if [ "$ENABLE_BC" -eq 1 ]; then
+  export PANVK_BC_EMULATION=1
+fi
+if [ "$ENABLE_DXVK" -eq 1 ]; then
+  export PANVK_DXVK_COMPAT=1
+fi
+if [ "$ENABLE_BCN_DEBUG" -eq 1 ]; then
+  export PANVK_DEBUG=bcn
+fi
+
+if [ "$PRINT_ENV" -eq 1 ]; then
+  env | grep -E '^(LD_LIBRARY_PATH|__EGL_VENDOR_LIBRARY_FILENAMES|LIBGL_DRIVERS_PATH|GBM_BACKENDS_PATH|VK_DRIVER_FILES|VK_ICD_FILENAMES|PAN_MESA_DEBUG|PAN_I_WANT_A_BROKEN_VULKAN_DRIVER|PANVK_BC_EMULATION|PANVK_DXVK_COMPAT|PANVK_DEBUG)=' | sort
+  exit 0
+fi
+
+exec "$@"

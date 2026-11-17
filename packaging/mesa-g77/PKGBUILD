@@ -1,0 +1,170 @@
+# Maintainer: linuxs20fe (r8s / SM-G780F / Exynos 990)
+# Reproducible side-by-side Mesa 26.3.0-devel (Panfrost + PanVK Valhall v9)
+# installed under /opt/mesa-g77 so stock Arch ARM extra/mesa remains intact
+# to satisfy desktop package SONAMEs without breaking pacman.
+
+pkgname=mesa-g77
+_commit='7d6bb09d5b59ec5af1a58971f34390a62943bfe0'
+pkgver=26.3.0_devel.7d6bb09d
+pkgrel=1
+pkgdesc='Mesa 26.3.0-devel Panfrost + PanVK (Mali-G77 / Valhall v9) side-by-side build in /opt/mesa-g77'
+arch=('aarch64')
+url='https://gitlab.freedesktop.org/mesa/mesa'
+license=('MIT AND BSD-3-Clause AND SGI-B-2.0')
+
+# Runtime dependencies checked against manifests/packages-aarch64.md and
+# manifests/packages-aarch64-stable.tsv (plus llvm-libs & libelf from meson.build).
+# Note: intentionally does NOT provide/conflict with extra/mesa so Hyprland,
+# Quickshell, Qt6, and libglvnd dependencies remain satisfied by stock packages.
+depends=(
+  'expat'
+  'gcc-libs'
+  'glibc'
+  'libdisplay-info'
+  'libdrm'
+  'libelf'
+  'libglvnd'
+  'libx11'
+  'libxcb'
+  'libxext'
+  'libxfixes'
+  'libxshmfence'
+  'libxxf86vm'
+  'llvm-libs'
+  'systemd-libs'
+  'wayland'
+  'zlib'
+  'zstd'
+)
+
+makedepends=(
+  'bison'
+  'clang'
+  'flex'
+  'git'
+  'llvm'
+  'meson'
+  'ninja'
+  'pkgconf'
+  'python'
+  'python-mako'
+  'python-packaging'
+  'python-ply'
+  'python-yaml'
+  'spirv-llvm-translator'
+  'spirv-tools'
+  'wayland-protocols'
+  'xorgproto'
+)
+
+optdepends=(
+  'vulkan-tools: vulkaninfo verification with PAN_I_WANT_A_BROKEN_VULKAN_DRIVER=1'
+  'mesa-utils: eglinfo / glxinfo verification (must report Mali-G77 (Panfrost))'
+)
+
+options=('!lto')
+
+_patches=(
+  '0001-panvk-baseline-Valhall-v9-Mali-G77-JM-enablement-fro.patch'
+  '0002-vulkan-runtime-add-a-compute-shader-BCn-BC1-BC5-deco.patch'
+  '0003-panvk-gate-and-advertise-BCn-emulation-PANVK_BC_EMUL.patch'
+  '0004-panvk-back-BC-emulated-images-with-a-raw-block-plane.patch'
+  '0005-panvk-decode-BC-blocks-with-a-compute-dispatch-after.patch'
+  '0006-vulkan-runtime-pin-the-BCn-decoder-arithmetic-to-the.patch'
+  '0007-panvk-add-a-PANVK_DXVK_COMPAT-gate-and-advertise-the.patch'
+  '0008-panvk-implement-shaderClipDistance-on-v9-as-a-fragme.patch'
+  '0009-panvk-enable-VK_KHR-EXT_robustness2-on-v9-under-PANV.patch'
+  '0010-panfrost-bifrost-lower-ubfe-ibfe-in-NIR.patch'
+  '0011-panfrost-bifrost-test-the-ubfe-ibfe-lowering-against.patch'
+  '0012-compiler-glsl-add-BC7-and-BC6H-compute-decoders-from.patch'
+  '0013-vulkan-runtime-decode-BC7-and-BC6H-in-vk_texcompress.patch'
+  '0014-vulkan-runtime-pin-the-BC7-BC6H-decoders-to-the-CPU-.patch'
+  '0015-panvk-dispatch-the-BC7-BC6H-decode-pipelines-add-PAN.patch'
+)
+
+_mesa_git_url="${MESA_G77_GIT_URL:-https://gitlab.freedesktop.org/mesa/mesa.git}"
+
+source=(
+  "mesa::git+${_mesa_git_url}#commit=${_commit}"
+  "${_patches[@]}"
+  'r8s-mesa-g77.sh'
+  '90-r8s-mesa-g77.conf'
+  'mesa-g77-run'
+  '20-r8s-mesa-g77.conf'
+)
+
+sha256sums=(
+  'SKIP'
+  '661cbee827bbd984ca1a7212cb3b0617ba0e2e3bfe14d156da52c67a09baeaa8'
+  '6a93c7b0f628c88a1e0c6721f8de470326e3bd61fa72ec27b9ac10f9f8f0bca0'
+  '874a23e048e054ad381c6f4f3df99cbe451d07063818c632b97d690895cffdef'
+  '4078b19798ea286448ce6a74107c9162dc34d3b8e32b236079ef891ab19f8fa4'
+  'cbf13fc98dd6ce28c4b2540c276d59cdd14aefeb465c1f2c3a50326f04fd4dfe'
+  '46704df09e46cd83c917d093a15a75d46f4caf79523a2be7df36c609a20623b6'
+  '7b7c27704f3c85e642d4faf641701ed69a72bde503fac1b8bf179e8060f077e4'
+  '6ccbfa5254df59bef327c353d7293949651d666675bd3fe96ee7447e4452d2cd'
+  'b5b3bc89aa83f2bde8b489f6177ed6cbbafe318c35c7ce3ff6eb4a70682a6e21'
+  '742320808e96ae31386053f7219f4354c43f0717b5c681fc9bc911e1c3eb6ff7'
+  'bbb793333981e65bc94f637b4cc0e7d07d71f39ea84b1201467786629aacd32b'
+  '10ce3f31fd96590fb79732707d6af44ea5333d7ac47f434f1f4cbbdac7395697'
+  '49e4d03c05fc29ae7ac081c0664a56e394d064f466fb0330e0fe1609f872570a'
+  '720563df065a2363d25ac408b0f05208c4edbeec19f1ea83400b4a6c5dc4bf72'
+  '45dc7f9abbe4c116a0d2b056c84af35fcc5b79b543213eb60e09367b91454901'
+  '2fc69b9aaac3aa265c2a65739c75f60f6b6272b2c81fd06905d823b7779f06ab'
+  'b5fc73a0d157539ef024a5e738eab5128115da49ccc2729c5433fd0ac16c4a9f'
+  '3f06f91420887574f15c1002965c9d7301cf6269bb3b4a243a1b5082d5d9b364'
+  '509380a06aa94fce4241526e6c12e91f0f237ceb5087a44cdf59bf5bbdd99f0c'
+)
+
+prepare() {
+  cd "${srcdir}/mesa"
+  local p
+  for p in "${_patches[@]}"; do
+    msg2 "Applying ${p}"
+    patch -Np1 -i "${srcdir}/${p}"
+  done
+}
+
+build() {
+  local meson_options=(
+    --prefix=/opt/mesa-g77
+    --libdir=lib
+    --buildtype=release
+    -Db_ndebug=true
+    -Dgallium-drivers=panfrost
+    -Dvulkan-drivers=panfrost
+    -Dglx=dri
+    -Degl=enabled
+    -Dgbm=enabled
+    -Dopengl=true
+    -Dgles1=disabled
+    -Dgles2=enabled
+    -Dglvnd=enabled
+    -Dplatforms=wayland,x11
+    -Dllvm=enabled
+    -Dshared-llvm=enabled
+    -Dvideo-codecs=
+    -Dtools=
+    -Ddisplay-info=enabled
+    -Dvalgrind=disabled
+    -Dlibunwind=disabled
+    -Dlmsensors=disabled
+    -Dxlib-lease=disabled
+    -Dvulkan-manifest-per-architecture=true
+  )
+
+  meson setup "${srcdir}/mesa" "${srcdir}/build" "${meson_options[@]}"
+  meson compile -C "${srcdir}/build"
+}
+
+package() {
+  meson install -C "${srcdir}/build" --destdir "${pkgdir}" --no-rebuild
+
+  install -Dm0755 "${srcdir}/mesa-g77-run" "${pkgdir}/opt/mesa-g77/bin/mesa-g77-run"
+  install -Dm0644 "${srcdir}/r8s-mesa-g77.sh" "${pkgdir}/etc/profile.d/r8s-mesa-g77.sh"
+  install -Dm0644 "${srcdir}/90-r8s-mesa-g77.conf" "${pkgdir}/etc/environment.d/90-r8s-mesa-g77.conf"
+  install -Dm0644 "${srcdir}/20-r8s-mesa-g77.conf" \
+    "${pkgdir}/usr/lib/systemd/system/sddm.service.d/20-r8s-mesa-g77.conf"
+  install -Dm0644 "${srcdir}/mesa/docs/license.rst" \
+    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

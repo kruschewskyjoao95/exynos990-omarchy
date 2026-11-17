@@ -71,7 +71,7 @@ build_kernel() {
   rm -rf /work/out/staging/modstage
   make -s ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- INSTALL_MOD_PATH=/work/out/staging/modstage INSTALL_MOD_STRIP=1 modules_install
   rm -f "/work/out/staging/modstage/lib/modules/$REL/build" "/work/out/staging/modstage/lib/modules/$REL/source"
-  tar -C "/work/out/staging/modstage/lib/modules/$REL" -czf "/work/out/modules-$REL.tar.gz" .
+  tar --owner=0 --group=0 -C "/work/out/staging/modstage/lib/modules/$REL" -czf "/work/out/modules-$REL.tar.gz" .
   sha256sum /work/out/boot/Image /work/out/boot/exynos990-r8s.dtb "/work/out/modules-$REL.tar.gz" | tee /work/out/boot/kernel.sha256
 }
 
@@ -102,9 +102,11 @@ package_uniloader() {
   fi
 
   if [ -f /work/out/boot/initramfs-slim.cpio.gz ] && [ -f /work/blobs/slk-stock.dtb ]; then
-    # uniLoader embeds blob/ramdisk directly; pass an empty ramdisk to mkbootimg
-    # so the initramfs is not packed twice into the Android boot image.
+    # uniLoader embeds blob/ramdisk directly via .incbin; remove start.o/uniLoader
+    # so make always re-embeds the updated ramdisk, and pass an empty ramdisk to
+    # mkbootimg so the initramfs is not packed twice into the Android boot image.
     cp /work/out/boot/initramfs-slim.cpio.gz blob/ramdisk
+    rm -f arch/aarch64/start.o uniLoader
     make ARCH=aarch64 CROSS_COMPILE=aarch64-linux-gnu- -j"$NPROC"
     python3 /work/sources/mkbootimg/mkbootimg.py \
       --header_version 2 --pagesize 2048 --base 0x10000000 \
@@ -119,6 +121,25 @@ package_uniloader() {
       exit 1
     fi
     sha256sum /work/out/boot/r8s-ram.img | tee /work/out/boot/r8s-ram.sha256
+  fi
+
+  if [ -f /work/out/boot/initramfs-mini.cpio.gz ] && [ -f /work/blobs/slk-stock.dtb ]; then
+    cp /work/out/boot/initramfs-mini.cpio.gz blob/ramdisk
+    rm -f arch/aarch64/start.o uniLoader
+    make ARCH=aarch64 CROSS_COMPILE=aarch64-linux-gnu- -j"$NPROC"
+    python3 /work/sources/mkbootimg/mkbootimg.py \
+      --header_version 2 --pagesize 2048 --base 0x10000000 \
+      --kernel_offset 0x8000 --ramdisk_offset 0 --tags_offset 0x100 \
+      --dtb_offset 0x01F00000 --os_version 13.0.0 --os_patch_level 2099-12 \
+      --kernel uniLoader --dtb /work/blobs/slk-stock.dtb \
+      --ramdisk /tmp/empty-ramdisk -o /work/out/boot/r8s-mini.img
+    MINI_BYTES=$(stat -c%s /work/out/boot/r8s-mini.img)
+    if [ "$MINI_BYTES" -gt 67108864 ]; then
+      echo "ERROR: r8s-mini.img ($MINI_BYTES bytes) exceeds lk3rd 64 MiB (67108864 bytes) buffer!" >&2
+      rm -f /work/out/boot/r8s-mini.img
+      exit 1
+    fi
+    sha256sum /work/out/boot/r8s-mini.img | tee /work/out/boot/r8s-mini.sha256
   fi
 }
 
