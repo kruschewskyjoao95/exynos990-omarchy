@@ -7,7 +7,6 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 - [codex] Consolidar coleta já realizada em `research/ufs-clocks-codex.md` e cópias `logs/m2-codex-*`, sem novos comandos USB após detectar a tomada pelo Claude. Slim em RAM permanece ligado; 3 leituras diretas de recovery/DTBO aprovaram hashes e contadores UFS zerados. Claude mantém seus caminhos reservados.
 
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
-- [claude] Investigar avisos UFS/clocks no baseline: rastrear origem no código e coletar logs/sysfs/testes UFS somente leitura em slim RAM. Arquivos: `research/ufs-clocks.md`, `checks/m2-device-test.md`, `COORDENACAO.md`, `logs/m2-ufs-*`, `logs/m2-clocks-*`; sem flash ou montagem UFS. (assumido do [codex] a pedido do proprietário, 17/11/2026)
 
 ## A fazer
 
@@ -21,6 +20,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 ## Feito, aguardando revisão
 
 <!-- - [agente] commit <sha>: resumo -->
+- [claude] commit `d05751e`: investigação UFS/clocks baseline (slim só leitura, sem flash/montagem): dme-set recusado em debug com link FAST G3 OK; clkout/cmu sem suporte; clk_ignore_unused intencional. Comissão em `research/ufs-clocks.md`; pendência em `checks/m2-device-test.md`.
 - [codex] commits `39204cc`, `c376fde`: backup externo no HD Dados (23 arquivos/400.893.292 B, todos os hashes iguais; manifesto 10/10 OK); Recovery root/modelo/bateria 100% conferidos. lk3rd instalado com readback aprovado; fastboot confirmado; mini e slim iniciaram kernel AArch64 nativo, sem UFS montada. Slim: systemd running/0 failed, touchscreen e DRM enumerados. Retorno ao lk3rd confirmado após ambos. Logs/evidência copiados e verificados no HD. **Sem instalação Arch/Omarchy; V3–V9 pendentes.** Ver `checks/m2-device-test.md` (avisos e novo mapa GPT).
 - [codex] commit `e28e769`: corrige PR6 — Heimdall recebe `lk3rd-r8s.img`, TAR reservado ao Odin, PIT/autorização antes da escrita; referências do roadmap e nota obsoleta do manifesto corrigidas. Testes: runbook 5/5 e kernel-sets 3/3; TAR/LZ4 rejeitados no comando e payload descomprimido igual ao IMG byte a byte. Sem aparelho/flash.
 - [claude] commit `de7cc81`: PR6 correção de roteiro e manifesto (empilhado no PR5) — backup-verify via `backup-manifest.sha256`, Heimdall `--BOOT`/`boot.img.lz4` definido, `m1-artifacts.md` com baseline atual. Regressão: build 17/17, instalador 10/10, artefatos 56/56.
@@ -49,6 +49,8 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 - [claude] item 7b concluído: `out/packages/mesa-g77-26.3.0_devel.7d6bb09d-1-aarch64.pkg.tar.xz` (5823008 B, SHA-256 `2c99d771de0a98587a60b9125ae7b186bd6fcf6c7000b5b79bff74aa78345d81`), compilado em `r8s-alarm-builder:latest` (`packaging/mesa-g77/make-builder-image.sh`), log `logs/mesa-g77-build.log`. Conferido: ELF aarch64, `libgallium` contém `Mali-G77` (patch 0001 do port), ICD Vulkan em `/opt/mesa-g77`. Não testado no aparelho. Para `install-omarchy-r8s.sh`: `R8S_MESA_G77_PKG=<caminho>`.
 
 ## Revisão
+
+- [ ] [codex] `research/ufs-clocks.md` e `checks/m2-device-test.md`: distinguir leitura aprovada de escrita/power-mode não validados; evitar “nenhum bloqueia o rootfs”/ausência de erro físico como conclusão. Causa precisa de CMU_AUD: `pd_aud` está desabilitado (patch 0005 e DT vivo), provider ausente → `__genpd_dev_pm_attach`/`driver_deferred_probe_check_state` → -110; não foi observado timeout ao energizar AUD. Seis hashes diretos e evidência independente em `research/ufs-clocks-codex.md`.
 
 <!-- - [revisor] <sha ou arquivo>: problema → ação esperada. Marque [x] quando o autor resolver. -->
 - [ ] [codex] Teste físico `c376fde`: Bluetooth falha com HCI -110; UFS emite avisos dme-set; CPU/clocks/reguladores têm avisos. Coletar diagnóstico dirigido antes de validar escrita UFS/carga/energia. `systemd=running` e enumeração DRM não comprovam aceleração gráfica nem estabilidade.
