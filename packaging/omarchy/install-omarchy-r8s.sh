@@ -14,6 +14,8 @@ TARGET_USER="${R8S_USER:-r8s}"
 OMARCHY_REPO_URL="${OMARCHY_REPO_URL:-https://pkgs.omarchy.org/stable/aarch64}"
 KEYRING_PKG="${OMARCHY_KEYRING_PKG:-omarchy-keyring-20251027-1-any.pkg.tar.zst}"
 KEYRING_SHA256="${OMARCHY_KEYRING_SHA256:-cce48c07cfc2b97e198df1bc81705db2921685032fe39f18b4ddfd84264b5967}"
+mapfile -t DESKTOP_PACKAGES < "$(dirname "$(readlink -f "$0")")/desktop-packages.txt"
+[ "${#DESKTOP_PACKAGES[@]}" -gt 0 ] || { echo "ERROR: empty desktop package list" >&2; exit 1; }
 
 for arg in "$@"; do
   case "$arg" in
@@ -58,7 +60,8 @@ if [ ! -r /sys/firmware/devicetree/base/compatible ] ||
   echo "ERROR: this installer requires the samsung,r8s device tree" >&2
   exit 1
 fi
-if [ ! -r /etc/os-release ] || ! grep -Eq '^ID="?archarm"?$' /etc/os-release; then
+# omarchy-settings brands /etc/os-release; the base distribution stays in /usr/lib.
+if [ ! -r /usr/lib/os-release ] || ! grep -Eq '^ID="?archarm"?$' /usr/lib/os-release; then
   echo "ERROR: this installer requires the Arch Linux ARM rootfs" >&2
   exit 1
 fi
@@ -125,28 +128,7 @@ pacman-key --populate omarchy
 log "3. Syncing repositories & installing Omarchy + r8s desktop packages"
 # Note: extra/mesa satisfies pacman SONAME dependencies (hyprland, qt6-base, egl-wayland),
 # while patched r8s Mali-G77 Mesa lives side-by-side in /opt/mesa-g77 (packaging/mesa-g77/).
-pacman -Syu --noconfirm
-pacman -S --noconfirm --needed \
-  omarchy \
-  omarchy-settings \
-  hyprland \
-  quickshell \
-  uwsm \
-  sddm \
-  xdg-desktop-portal-hyprland \
-  xdg-desktop-portal-gtk \
-  mesa \
-  libdrm \
-  egl-wayland \
-  foot \
-  firefox \
-  squeekboard \
-  brightnessctl \
-  xdg-user-dirs \
-  xdg-utils \
-  wl-clipboard \
-  noto-fonts \
-  noto-fonts-emoji
+OMARCHY_ALLOW_DIRECT_PACMAN=1 pacman -Syu --noconfirm --needed "${DESKTOP_PACKAGES[@]}"
 
 if [ -n "$MESA_G77_PKG" ]; then
   log "3b. Installing side-by-side /opt/mesa-g77 package ($MESA_G77_PKG)"
@@ -289,9 +271,7 @@ case "$ACTION" in
     if hyprctl -j monitors 2>/dev/null | grep -q '"dpmsStatus":[[:space:]]*false'; then
       hyprctl dispatch dpms on >/dev/null 2>&1 || true
     else
-      if command -v omarchy-lock-screen >/dev/null 2>&1; then
-        omarchy-lock-screen >/dev/null 2>&1 &
-      fi
+      omarchy-system-lock >/dev/null 2>&1 || exit 1
       hyprctl dispatch dpms off >/dev/null 2>&1 || true
     fi
     ;;
