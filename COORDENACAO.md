@@ -5,6 +5,7 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 ## Em andamento
 
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
+- [claude] item 7b (pedido do proprietário: GPU é obrigatória): imagem Docker aarch64 de build + compilar `mesa-g77`. Arquivos: `packaging/mesa-g77/make-builder-image.sh` (novo), `out/build/`, `out/packages/`, `logs/mesa-g77-build.log`
 - (livre; preparo de M1 e receitas M4 concluídos no computador — aguardando decisão sobre `efs`/`sec_efs` e ordem explícita do proprietário para iniciar M2 no aparelho)
 
 ## A fazer
