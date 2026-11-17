@@ -6,7 +6,6 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
 - (gemini livre para análise não conflitante de firmwares Wi-Fi/BT em `blobs/r8s-device/vendor/` — aguardando autorização explícita do proprietário para iniciar M2 no aparelho)
-- [claude] PR2 baseline x series: limpar itens obsoletos 10/11 + guarda `checks/test-kernel-sets.py`. Arquivos: `COORDENACAO.md`, `checks/test-kernel-sets.py`
 
 ## A fazer
 
@@ -21,6 +20,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 ## Feito, aguardando revisão
 
 <!-- - [agente] commit <sha>: resumo -->
+- [claude] commit `5889b27`: PR2 baseline x series (empilhado no PR1): removidos itens obsoletos 10/11; `checks/test-kernel-sets.py` 3/3 (out/boot baseline, série preservada, ordem/0101/0106 excluídos). Regressão: build 17/17, instalador 10/10, skills 4/4, flash 18/18, artefatos 56/56.
 - [claude] commit `54f0fe2`: PR1 arrumar a casa — config Agent skills (AGENTS.md + docs/agents/*), `checks/test-agent-skills.py` 4/4, `.gitignore` ignora `logs/*.status`. Regressão: build 17/17, instalador 10/10, flash 18/18, artefatos 56/56. Sem teste no aparelho.
 - [claude] conjunto **baseline** com Wi-Fi sem firmware embutido (17/11/2026): kernel só com port + `0100`, `EXTRA_FIRMWARE=""`, sem `DEVFREQ_THERMAL`; rootfs com `board-2.bin`, `board-2.r8s.bin`, `amss/m3` e `qca/htbtfw20.tlv`+`htnv20.bin`; slim e imagens regenerados. Artefatos 56/56. `Image` `cd727178…`, `ufs-root.img` `a2bcc167…`, `r8s-ram.img` `fe07490f…` (63.150.080 B), `r8s-ufs` `2cf80ae1…`, `r8s-mini` `5b3545e6…`, slim `53a8ed4b…`. É o conjunto para o 1º teste em RAM. Série anterior preservada em `out/validation/series-wifi/`. **Não testado no aparelho.**
 - [claude] patch `0106` (DT: RTS da UART do Bluetooth, `uart1_bus_single`): fora da `series`, opt-in; `git apply --check` ok sobre `out/work/linux`; não compilado nem testado. Ver `packaging/kernel-patches/README.md`. (Superado pelo baseline acima: `out/boot/` hoje é baseline `cd727178`/`fe07490f`, conferido em `checks/test-kernel-sets.py`.)
