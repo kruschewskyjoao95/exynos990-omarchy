@@ -1,6 +1,6 @@
 # Roadmap de implementação
 
-Data: 16/11/2026. Alvo: SM-G780F / r8s. Todas as etapas de implementação estão **pendentes**. A pesquisa inicial está concluída, sujeita à revalidação ao fixar commits.
+Data: 16/11/2026. Alvo: SM-G780F / r8s. M0 e M1 em andamento (ver itens); M2 em diante **pendentes**. A pesquisa inicial está concluída, sujeita à revalidação ao fixar commits.
 
 ## Entrega pretendida
 
@@ -22,24 +22,33 @@ As metas de teste abaixo são critérios propostos para este projeto, não garan
 | M5 | M4 | Alpha instalável, atualização e retorno testados |
 | M6 | Recurso escolhido + base de teste | Função móvel adicional demonstrada em aplicativo real |
 
+**Decisão do proprietário (17/11/2026): sem rootfs Debian completo.** O kernel do port serve às duas bases; só o rootfs muda. Sequência:
+
+1. **Computador, em paralelo:** kernel/DTB/módulos, lk3rd, uniLoader, initramfs slim (Debian) e rootfs Arch ARM mínimo (≤ 700 MiB, cabe no buffer de 768 MiB do lk3rd).
+2. **Teste em RAM** (`fastboot boot`, nada gravado): tela, toque e console USB com o initramfs slim. Confirma o kernel isoladamente.
+3. **Gravar o Arch mínimo** em `userdata`; o primeiro boot expande a partição (`r8s-growroot`).
+4. **Instalar o Omarchy via `pacman`** sobre o Arch comprovado. O desktop (~1,4 GiB instalado, ver [pacotes](../manifests/packages-aarch64.md)) não cabe na imagem de flash.
+
+Motivo: elimina montar e gravar um Debian que seria descartado, mas mantém um teste que separa falha de kernel de falha de userspace. Se o passo 3 falhar com o passo 2 aprovado, aí sim montar o rootfs Debian do port para isolar a causa.
+
 Fontes e receitas de M1 podem avançar enquanto M0 depende do aparelho. A análise de pacotes de M4 e de drivers de M6 também pode começar cedo; isso não equivale a aprovar seus testes no telefone. Critérios detalhados: V0–V9 em [08](08-contratos-e-validacao.md).
 
 ## M0 — Inventário e recuperação
 
-- [ ] Registrar Android/ROM atual, versão do bootloader, armazenamento, estado de desbloqueio, acesso a recovery/Download e disponibilidade de root. Modelo já confirmado; não presumir os demais itens.
-- [ ] Copiar dados pessoais para fora do telefone e verificar amostras restauradas.
-- [ ] Obter firmware stock correspondente e registrar ferramentas e procedimento de recuperação aplicáveis ao estado atual.
-- [ ] Obter backups necessários por método compatível com os privilégios disponíveis; registrar tamanhos e SHA-256. Não considerar um backup dentro do telefone suficiente.
+- [x] Registrar Android/ROM atual, versão do bootloader, armazenamento, estado de desbloqueio, acesso a recovery/Download e disponibilidade de root. Modelo já confirmado; não presumir os demais itens. Evidência: [inventário](03-primeira-sessao.md#inventário-atualizado-em-17112026), 17/11/2026 (LineageOS 24.0, bootloader `G780FXXSOFYJ2` desbloqueado, sem `adb root`).
+- [ ] Copiar dados pessoais para fora do telefone e verificar amostras restauradas. Inventário registra "sem dados pessoais a preservar"; falta confirmação do proprietário.
+- [x] Obter firmware stock correspondente e registrar ferramentas e procedimento de recuperação aplicáveis ao estado atual. Evidência: firmware `G780FXXSOFYJ2` (`ZTO`) via `samloader`, hashes em [sources.md](../manifests/sources.md); Download mode registrado no inventário.
+- [ ] Obter backups necessários por método compatível com os privilégios disponíveis; registrar tamanhos e SHA-256. Não considerar um backup dentro do telefone suficiente. Pendente: sem `adb root` não há cópia de `efs`/`sec_efs` (IMEI), que o firmware stock não restaura.
 - [ ] Inspecionar as fontes de flash e restauração antes de qualquer execução; não usar endereços de partição copiados sem conferir o aparelho.
 
 **Entrega:** inventário e plano de recuperação. **Aprovação:** artefatos acessíveis no computador e modo de recuperação alcançável. A restauração completa será validada no ciclo de instalação; só entrar nesse ciclo aceitando a perda de dados e efeitos irreversíveis descritos pelo port.
 
 ## M1 — Fontes e build reproduzível
 
-- [ ] Fixar SHAs do port, kernel, Mesa, lk3rd, uniLoader e Omarchy; guardar procedência e versões das ferramentas.
-- [ ] Reproduzir primeiro o build Debian ARM64 documentado; revisar os scripts para o Linux do computador e separar diretórios de saída dos discos reais.
+- [x] Fixar SHAs do port, kernel, Mesa, lk3rd, uniLoader e Omarchy; guardar procedência e versões das ferramentas. Evidência: [sources.md](../manifests/sources.md), [host-tools.md](../manifests/host-tools.md).
+- [ ] Reproduzir o build documentado do kernel, lk3rd, uniLoader e initramfs slim; o rootfs Debian completo fica fora (decisão de 17/11/2026). Revisar os scripts para o Linux do computador e separar diretórios de saída dos discos reais.
 - [ ] Conferir patches, DTB, firmware, módulos e imagem como um conjunto da mesma compilação.
-- [ ] Construir initramfs mínimo para diagnóstico, imagem de boot e rootfs básico; registrar tamanho e hash de cada saída.
+- [ ] Construir initramfs mínimo para diagnóstico, imagem de boot e rootfs Arch ARM mínimo (≤ 700 MiB, com `r8s-growroot`); registrar tamanho e hash de cada saída. Parcial em 17/11/2026: `out/boot/lk3rd-r8s.img` (2097152 bytes, SHA-256 `48a15319…86ab`) e `.tar` para Download mode compilados via `packaging/build-env/`; kernel `6.12.0-rc5-next-20241104-r8s` em compilação; initramfs e rootfs pendentes. Nada testado no aparelho.
 - [ ] Revisar uso de containers privilegiados, dispositivos loop, caminhos fixos, permissões e serviços de diagnóstico.
 
 **Entrega:** receita executável revisada e artefatos rastreáveis. **Aprovação:** build completo repetido em ambiente limpo com versões fixadas; registrar diferenças de hash se a construção ainda não for determinística. Referências: [base técnica](01-base-s20fe.md) e [cadeia de artefatos](05-build-e-instalacao.md).
@@ -49,11 +58,11 @@ Fontes e receitas de M1 podem avançar enquanto M0 depende do aparelho. A análi
 - [ ] Preparar lk3rd pelo procedimento compatível com o estado inventariado em M0.
 - [ ] Após essa preparação, testar kernel e initramfs em RAM; confirmar que esse teste não monta armazenamento em escrita. Instalar lk3rd anteriormente já é uma alteração persistente.
 - [ ] Recolher logs de boot e testar console de recuperação antes de instalar o rootfs.
-- [ ] Instalar a base mínima em armazenamento apenas no ciclo de instalação planejado; validar o destino real antes da gravação.
+- [ ] Instalar o rootfs Arch ARM mínimo em `userdata` apenas no ciclo de instalação planejado; validar o destino real antes da gravação.
 - [ ] Registrar cinco boots consecutivos, rede, toque, renderização, alimentação e temperaturas em repouso e durante 30 minutos de carga controlada.
 - [ ] Guardar uma imagem conhecida como funcional e testar retorno a ela.
 
-**Entrega:** Debian básico comprovado no aparelho. **Aprovação:** boots e recuperação repetíveis, sem travamentos observados no ensaio; carga e temperatura dentro dos limites documentados para o hardware. Esse ensaio não certifica segurança elétrica nem autonomia de uso diário.
+**Entrega:** kernel comprovado em RAM e Arch ARM mínimo comprovado no aparelho. **Aprovação:** boots e recuperação repetíveis, sem travamentos observados no ensaio; carga e temperatura dentro dos limites documentados para o hardware. Esse ensaio não certifica segurança elétrica nem autonomia de uso diário.
 
 ## M3 — Gráficos e entrada antes do desktop completo
 
@@ -63,13 +72,12 @@ Fontes e receitas de M1 podem avançar enquanto M0 depende do aparelho. A análi
 - [ ] Integrar terminal, navegador ARM64 e interface de rede. Testar escala, toque, orientação manual, teclado virtual e teclado USB.
 - [ ] Registrar problemas de orientação, escala e entrada que a sessão final de M4 precisa resolver.
 
-**Entrega:** prova de hardware gráfico e entrada na referência Debian. **Aprovação:** renderer de hardware, toque alinhado, terminal e aplicação gráfica utilizáveis, incluindo reinício. Usar periféricos para diagnóstico quando necessário; navegação completa por toque será requisito da sessão final. Não é necessário tematizar Debian nem portar todo o Omarchy para essa base.
-
+**Entrega:** prova de hardware gráfico e entrada no Arch ARM mínimo. **Aprovação:** renderer de hardware, toque alinhado, terminal e aplicação gráfica utilizáveis, incluindo reinício. Usar periféricos para diagnóstico quando necessário; navegação completa por toque será requisito da sessão final.
 ## M4 — Base Arch ARM e integração do Omarchy
 
 - [ ] Auditar versões e disponibilidade ARM64 de todos os componentes escolhidos; separar essenciais de opcionais.
 - [ ] Comparar receitas e patches dos pacotes Omarchy com os pacotes Arch ARM; nome igual não comprova equivalência. Fixar um conjunto compatível conforme [06](06-pacotes-e-desktop.md).
-- [ ] Construir rootfs Arch Linux ARM separado, conservando a referência Debian e as imagens recuperáveis.
+- [ ] Instalar o Omarchy via `pacman` sobre o Arch ARM mínimo já comprovado (depois do `r8s-growroot`), conservando as imagens recuperáveis.
 - [ ] Integrar suporte r8s, serviços, firmware e Mesa; repetir os ensaios de M2/M3 nessa base antes de adicionar o desktop completo.
 - [ ] Portar o conjunto coerente de compositor, shell, temas e comandos do Omarchy para a revisão escolhida. Resolver dependências entre configurações, pacotes e caminhos.
 - [ ] Adaptar comandos de energia, rede, brilho e sessão ao telefone; manter fora da imagem os componentes incompatíveis, com justificativa explícita.
@@ -105,6 +113,6 @@ Rastreamento inicial de arquivos e provas por recurso: [LineageOS e drivers](07-
 
 ## Organização do trabalho
 
-Manter este diretório como projeto de integração. Na implementação, usar checkouts separados dos upstreams, patches pequenos e versões fixadas; criar forks remotos quando houver mudanças concretas a manter. Hoje só existem documentos. Não duplicar árvores inteiras nem desenvolver drivers novos antes de reproduzir a base.
+Manter este diretório como projeto de integração. Na implementação, usar checkouts separados dos upstreams, patches pequenos e versões fixadas; criar forks remotos quando houver mudanças concretas a manter. Em 17/11/2026 há documentos, manifestos, scripts adaptados com teste simulado e o primeiro build M1 em andamento (`packaging/build-env/`). Não duplicar árvores inteiras nem desenvolver drivers novos antes de reproduzir a base.
 
 Dependências dos testes físicos: M0 + M1 → M2 → M3 → M4 → M5. Pesquisa e preparação no computador podem avançar nas frentes independentes. M6 usa a base de teste de M2 ou posterior, sem bloquear a alpha se as limitações forem explícitas. Planejar por resultados medidos; prazo de calendário só depois de M2.
