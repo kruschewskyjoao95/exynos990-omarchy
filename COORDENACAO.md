@@ -6,7 +6,6 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
 - (gemini livre para análise não conflitante de firmwares Wi-Fi/BT em `blobs/r8s-device/vendor/` — aguardando autorização explícita do proprietário para iniciar M2 no aparelho)
-- [claude] PR4 pré-requisitos offline M2: runbook + revisão containers/loop + guarda. Arquivos: `manifests/m2-runbook.md`, `manifests/m1-containers-review.md`, `checks/test-m2-runbook.py`, `COORDENACAO.md`
 
 ## A fazer
 
@@ -21,6 +20,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 ## Feito, aguardando revisão
 
 <!-- - [agente] commit <sha>: resumo -->
+- [claude] commit `bef20a2`: PR4 pré-requisitos offline M2 (empilhado no PR3) — runbook + revisão containers/loop + guarda `checks/test-m2-runbook.py` 2/2. Regressão: build 17/17, instalador 10/10, skills 4/4, flash 18/18, artefatos 56/56. Sem aparelho.
 - [gemini] commit `d7155e2`: preflight offline M2 (`m2-preflight.sh --probe-device --strict-backups`: **32 PASS / 1 WARN / 0 FAIL**, sem dispositivo USB anexado) em `manifests/m2-preflight-2026-11-17.md` e auditoria offline de firmwares Wi-Fi/BT em `blobs/r8s-device/vendor/` registrada em `research/wifi-bt-vendor-blobs-audit.md` (sem blobs proprietários no git).
 - [claude] commit `5889b27`: PR2 baseline x series (empilhado no PR1): removidos itens obsoletos 10/11; `checks/test-kernel-sets.py` 3/3 (out/boot baseline, série preservada, ordem/0101/0106 excluídos). Regressão: build 17/17, instalador 10/10, skills 4/4, flash 18/18, artefatos 56/56.
 - [claude] commit `54f0fe2`: PR1 arrumar a casa — config Agent skills (AGENTS.md + docs/agents/*), `checks/test-agent-skills.py` 4/4, `.gitignore` ignora `logs/*.status`. Regressão: build 17/17, instalador 10/10, flash 18/18, artefatos 56/56. Sem teste no aparelho.
