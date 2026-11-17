@@ -1,0 +1,45 @@
+#!/bin/sh
+# Compose the USB gadget over configfs. Idempotent; safe to re-run.
+set -e
+G=/sys/kernel/config/usb_gadget/r8s
+mountpoint -q /sys/kernel/config || mount -t configfs none /sys/kernel/config
+[ -d "$G" ] && exit 0
+
+mkdir -p "$G"
+echo 0x1d6b > "$G/idVendor"       # Linux Foundation
+echo 0x0104 > "$G/idProduct"      # Multifunction Composite Gadget
+echo 0x0200 > "$G/bcdUSB"
+echo 0x0100 > "$G/bcdDevice"
+# Composite device: class is defined per-interface (IAD).
+echo 0xEF > "$G/bDeviceClass"
+echo 0x02 > "$G/bDeviceSubClass"
+echo 0x01 > "$G/bDeviceProtocol"
+
+mkdir -p "$G/strings/0x409"
+echo "0123456789" > "$G/strings/0x409/serialnumber"
+echo "s20fe-port" > "$G/strings/0x409/manufacturer"
+echo "r8s mainline recovery" > "$G/strings/0x409/product"
+
+mkdir -p "$G/configs/c.1/strings/0x409"
+echo "acm + rndis" > "$G/configs/c.1/strings/0x409/configuration"
+echo 500 > "$G/configs/c.1/MaxPower"
+
+# RNDIS first: Windows is happiest when it is interface 0.
+mkdir -p "$G/functions/rndis.usb0"
+mkdir -p "$G/functions/acm.usb0"
+ln -sf "$G/functions/rndis.usb0" "$G/configs/c.1/"
+ln -sf "$G/functions/acm.usb0"   "$G/configs/c.1/"
+
+# Microsoft OS descriptors so Windows loads RNDIS without a manual .inf.
+if [ -d "$G/os_desc" ]; then
+	echo 1 > "$G/os_desc/use"
+	echo 0xcd > "$G/os_desc/b_vendor_code"
+	echo MSFT100 > "$G/os_desc/qw_sign"
+	echo RNDIS > "$G/functions/rndis.usb0/os_desc/interface.rndis/compatible_id" 2>/dev/null || true
+	echo 5162001 > "$G/functions/rndis.usb0/os_desc/interface.rndis/sub_compatible_id" 2>/dev/null || true
+	ln -sf "$G/configs/c.1" "$G/os_desc/" 2>/dev/null || true
+fi
+
+UDC=$(ls /sys/class/udc | head -n1)
+[ -n "$UDC" ] || { echo "r8s-usb-gadget: no UDC found" >&2; exit 1; }
+echo "$UDC" > "$G/UDC"

@@ -1,0 +1,56 @@
+# LineageOS como referência de hardware
+
+Pesquisa documental em 16/11/2026, específica para **SM-G780F / r8s / Exynos 990**. Os links `lineage-24.0` são mutáveis; antes da implementação, registrar commits. Nenhum recurso foi testado no aparelho nesta pesquisa.
+
+## Decisão de integração
+
+**Rota principal: kernel do port mainline r8s + rootfs Arch ARM64 + desktop Omarchy adaptado.** LineageOS entra como referência para hardware, firmware, inicialização e código que possa ser adaptado às interfaces Linux. O port já se apresenta como Linux 6.12 com DRM/KMS e Panfrost, mas ainda lista áudio interno, Bluetooth, suspensão profunda, celular e câmeras como ausentes. Essa é a base de comparação, não uma promessa de que o trabalho restante é pequeno. [Fonte do port](https://github.com/bshbsh404/galaxy-s20fe-mainline-linux).
+
+**Fallback separado: kernel Android + ambiente Android reduzido + pontes Halium/libhybris.** Só promovê-lo a rota de produto depois de uma prova com gráficos e um recurso necessário. Não colocar bibliotecas Android no rootfs principal e presumir que completam o suporte mainline. A entrega pretendida continua sendo boot independente e desktop Linux; o fallback acrescentaria dependências Android de hardware e precisaria ser identificado como tal.
+
+## Árvores confirmadas e limites da leitura
+
+| Fonte | Evidência e uso |
+| --- | --- |
+| [r8s/lineage.dependencies](https://github.com/LineageOS/android_device_samsung_r8s/blob/lineage-24.0/lineage.dependencies) | Encaminha à árvore `universal9830-common`. |
+| [common/lineage.dependencies](https://github.com/LineageOS/android_device_samsung_universal9830-common/blob/lineage-24.0/lineage.dependencies) | Referencia kernel `universal9830`, hardware Samsung, Exynos, gráficos e interfaces Samsung SLSI. É o mapa inicial de dependências. |
+| [BoardConfigCommon.mk](https://github.com/LineageOS/android_device_samsung_universal9830-common/blob/lineage-24.0/BoardConfigCommon.mk) e [r8s/BoardConfig.mk](https://github.com/LineageOS/android_device_samsung_r8s/blob/lineage-24.0/BoardConfig.mk) | Selecionam `exynos9830_defconfig` **mais** `r8s.config`. A configuração comum isolada não representa o aparelho. |
+| [Makefile do kernel](https://github.com/LineageOS/android_kernel_samsung_universal9830/blob/lineage-24.0/Makefile) | Declara **4.19.325**. Não confundir a versão Lineage com a versão Linux. |
+| [exynos9830_defconfig](https://github.com/LineageOS/android_kernel_samsung_universal9830/blob/lineage-24.0/arch/arm64/configs/exynos9830_defconfig) | Contém `CONFIG_FAKE_UNAME_5_10=y`; uma identificação exibida como 5.10 não basta para identificar essa base. |
+
+O mapeamento abaixo confirma arquivos de integração e dependências; **não é uma auditoria completa dos drivers**. A leitura web dos arquivos individuais de ABOX, CPIF e câmera no kernel não foi concluída. Localizar suas implementações e os DTS efetivamente selecionados no checkout é uma pendência explícita, anterior a estimar qualquer port. Não tratar um nome de diretório provável como código já verificado.
+
+## Recursos: de onde partir e como provar a integração
+
+As ações da última coluna são propostas nossas. As colunas de evidência distinguem código/configuração de dependências binárias; presença na receita Android não comprova funcionamento no Linux desktop.
+
+| Recurso | Arquivos e dependências encontrados | Trabalho na rota principal e prova mínima |
+| --- | --- | --- |
+| **Áudio / ABOX** | `r8s/configs/audio/mixer_paths.xml` é instalado por [r8s/device.mk](https://github.com/LineageOS/android_device_samsung_r8s/blob/lineage-24.0/device.mk). A receita comum referencia `hardware/samsung_slsi-linaro/exynos/libaudio/audiohal_comv1`, seu `proxy`, e `audio.primary.universal990`. [device-common.mk](https://github.com/LineageOS/android_device_samsung_universal9830-common/blob/lineage-24.0/device-common.mk). O inventário binário inclui `abox_tplg.bin`, `calliope_dram.bin`, `calliope_sram.bin` e firmware de amplificadores. [proprietary-files.txt](https://github.com/LineageOS/android_device_samsung_universal9830-common/blob/lineage-24.0/proprietary-files.txt). | Rastrear carregamento de firmware, IPC do DSP, clocks, DMA e controles de mixer até o driver. Aproveitar sequências e rotas como referência; adaptar à pilha ALSA/ASoC do kernel escolhido e depois PipeWire. Primeiro validar PCM e microfone; só testar alto-falantes após preservar calibração e proteção dos amplificadores. HAL Android e XML de política não viram automaticamente configuração ALSA. |
+| **Rede celular** | `device-common.mk` seleciona `cbd`, protocolo `sipc`, namespace `exynos/cpboot_v3`, `init.baseband.rc` e `init.vendor.rilcommon.rc`. [Receita](https://github.com/LineageOS/android_device_samsung_universal9830-common/blob/lineage-24.0/device-common.mk). `rild` e `libsec-ril-impl.so` aparecem como blobs, inclusive com origem fixada em outro firmware Samsung. [Inventário](https://github.com/LineageOS/android_device_samsung_universal9830-common/blob/lineage-24.0/proprietary-files.txt). | Mapear boot do modem, transporte CP/AP, nós de dispositivo e protocolo de controle. Separar driver de transporte de serviço de telefonia. Provar registro na rede e dados antes de SMS e voz; validar IMS/VoLTE separadamente. Só escolher ModemManager ou outra ponte depois de confirmar a interface disponível. RIL proprietário não é um driver Linux transplantável. |
+| **Câmeras** | A receita comum inclui `android.hardware.camera.provider-service.samsung` e integração com buffers. [Receita](https://github.com/LineageOS/android_device_samsung_universal9830-common/blob/lineage-24.0/device-common.mk). Há bibliotecas binárias `libexynoscamera_plugin.so` e `libuniapi.so`. [Inventário](https://github.com/LineageOS/android_device_samsung_universal9830-common/blob/lineage-24.0/proprietary-files.txt). r8s configura ID adicional 50 para telefoto. [device.mk](https://github.com/LineageOS/android_device_samsung_r8s/blob/lineage-24.0/device.mk). | Identificar sensores realmente presentes, alimentação, CSI, ISP, firmware e calibração. Avaliar adaptação V4L2/media-controller e processamento/libcamera. Primeira prova: capturar uma imagem válida de um sensor em aplicativo Linux, registrando se houve ISP ou apenas captura bruta. Não inferir suporte às demais lentes nem qualidade Android. |
+| **Bluetooth** | `r8s/BoardConfig.mk` declara QCOM/ROME, BTNV e SMD_TTY; `r8s/device.mk` inclui `android.hardware.bluetooth@1.0.vendor`. [BoardConfig](https://github.com/LineageOS/android_device_samsung_r8s/blob/lineage-24.0/BoardConfig.mk), [receita](https://github.com/LineageOS/android_device_samsung_r8s/blob/lineage-24.0/device.mk). | Identificar transporte HCI, firmware, alimentação, endereço e wake no DTS e nos serviços efetivos. As flags são pistas de integração, não identificação definitiva do chip/transporte. Provar controlador no BlueZ, descoberta, pareamento e reconexão; testar áudio Bluetooth separadamente. O inventário proprietário específico de r8s ainda precisa ser lido integralmente. |
+| **Suspensão e energia** | `configs/power/powerhint.json` contém controles cpufreq, GPU, EMS e touchscreen, inclusive ação de despertar por toque. [Arquivo](https://github.com/LineageOS/android_device_samsung_universal9830-common/blob/lineage-24.0/configs/power/powerhint.json). A receita escolhe power HAL e serviço térmico. [Receita](https://github.com/LineageOS/android_device_samsung_universal9830-common/blob/lineage-24.0/device-common.mk). | Usar os controles como pistas para rastrear PM, firmware, domínios de energia e wake. Adaptar apenas interfaces existentes no kernel mainline; copiar `powerhint.json` não implementa suspensão. Medir ciclos suspend/resume, consumo, wake e restauração de tela, toque e rede. Validar temperatura e carga; tela apagada e CPU idle não comprovam suspensão profunda. |
+
+## O que Halium/libhybris realmente muda
+
+O libhybris permite usar bibliotecas compiladas para Bionic em processos de distribuições Linux. Seu próprio projeto descreve Android reduzido em serviço/container, headers da versão Android correspondente, adaptação de Hardware Composer e pontes específicas, como áudio. Para interfaces Binder, aponta também `libgbinder`. **Ele não converte o driver de kernel 4.19 em driver mainline.** [Documentação libhybris](https://github.com/libhybris/libhybris).
+
+A documentação UBports exige combinar Halium com blobs da versão Android correspondente; a tabela consultada relaciona versões até Halium 13 / LineageOS 20. Isso **não comprova compatibilidade com `lineage-24.0` nem determina a melhor versão para r8s**. A receita antiga de primeiros passos do Halium ainda cita Lineage 12.1/14.1, portanto não deve ser usada como matriz universal atual. [UBports: versões](https://docs.ubports.com/en/latest/porting/introduction/Intro.html#android-and-halium-versions), [Halium: primeiros passos](https://docs.halium.org/en/latest/porting/first-steps.html).
+
+Para habilitar o fallback, a investigação deve entregar uma combinação exata de kernel, firmware/vendor, versão Android, Halium, bridges e rootfs. Depois precisa demonstrar:
+
+1. Boot com recuperação preservada e inicialização dos serviços de hardware.
+2. Renderização acelerada e apresentação na tela pelo compositor escolhido; passar um teste EGL não basta para afirmar Hyprland funcional.
+3. Um recurso prioritário utilizável em aplicativo Linux por sua ponte, incluindo retomada após suspensão quando aplicável.
+
+Se essa prova exigir abandonar Hyprland, registrar a incompatibilidade como decisão de produto; não chamar o resultado de Omarchy completo. Nesta pesquisa não foi identificada uma combinação pronta e validada r8s + Halium + Hyprland/Omarchy.
+
+## Próxima investigação, antes de compilar
+
+1. Fixar revisões das árvores acima e do port r8s; preservar `r8s.config`, DTS/DTBO, dependências e origem de cada firmware. Não misturar blobs somente por compartilharem nomes.
+2. Para cada recurso, seguir a cadeia `device.mk → serviço/HAL → chamadas ao kernel → driver/DTS → firmware`. Localizar ABOX, CPIF/modem, câmera e PM por símbolos e referências no checkout; registrar arquivos reais e lacunas de código proprietário.
+3. Comparar essa cadeia com o kernel do port e selecionar **um** recurso para a primeira prova. Resultado esperado: patch de kernel/configuração e pacote de integração Linux, ou impedimento concreto que justifique experimentar o fallback.
+4. Incorporar apenas provas aprovadas à imagem nativa: kernel/DTB, firmware necessário, configuração ALSA/udev/systemd e pacotes do rootfs. Manter a escolha e atualização do desktop separadas da validação de hardware.
+
+Não houve instalação, compilação nem flash. Permanecem sem validação o comportamento físico, os drivers individuais não lidos e a compatibilidade do fallback com o desktop desejado.

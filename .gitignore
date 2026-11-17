@@ -1,0 +1,23 @@
+# Fontes clonadas e checkouts locais
+sources/
+
+# Artefatos gerados (imagens, rootfs, modulos, builds)
+out/
+
+# Logs e arquivos temporarios locais
+*.log
+*.img
+*.cpio.gz
+*.tar.gz
+*.tar.xz
+*.dtb
+*.dtbo
+
+# Backups e blobs proprietarios privados do aparelho
+backups/
+blobs/
+private/
+boot/slk-stock.dtb
+
+# Banco pacman temporario de resolucao offline/isolada
+.tmp/
