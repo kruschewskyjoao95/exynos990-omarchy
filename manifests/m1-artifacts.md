@@ -2,6 +2,8 @@
 
 Verificado localmente em: **2026-11-17** por `checks/verify-m1-m4-artifacts.sh` e `packaging/host-tools/m2-preflight.sh` (após rebuild com `mini`, `package` e correções de serviços/permissões em `ufs-root.img`). Todos os valores abaixo foram **observados nos artefatos em `out/` e `blobs/`**; **nenhum artefato foi gravado ou executado no SM-G780F neste estágio**.
 
+**Atualização codex (17/11/2026):** slim e imagens uniLoader regenerados; valores da tabela abaixo atualizados por leitura dos arquivos. Baseline anterior preservado em `out/validation/baseline`. Rootfs Arch permanece o anterior (sem firmware Bluetooth novo). Resultado completo e limites em [offline-validation.md](offline-validation.md).
+
 ## Kernel e cadeia de boot
 
 - `kernelrelease`: **`6.12.0-rc5-next-20241104-r8s`** (lido de `out/boot/kernel-release.txt`)
@@ -20,16 +22,17 @@ Verificado localmente em: **2026-11-17** por `checks/verify-m1-m4-artifacts.sh` 
 | `out/boot/lk3rd-r8s.img` | 2097152 | `48a15319a0ee3dcb65faaacaf51bd4bb897925c5efc03d19543eaa4afc4286ab` | Bootloader secundário r8s (`<= 2097152` B / 2 MiB) |
 | `out/boot/lk3rd-r8s.tar` | 573440 | `d999b844426f229742019b1cadf154ac95a90251a598dfa6708ee1ec1185c0e5` | Pacote Heimdall/Odin de `lk3rd-r8s.img` para Download mode |
 | `out/boot/lk3rd-r8s.sha256` | 190 | `27e403eb7cac1a7899a7b4c5d2df50501a3e7b13bbd069d1c47da5fd758f1e58` | Checksums de `lk3rd-r8s.img` e `.tar` |
-| `out/boot/initramfs-slim.cpio.gz` | 37725548 | `fc172473176ba513cce504b893f0d277d08ed56ed4e68a048a92b33df166ee60` | Initramfs Debian `trixie` slim (teste em RAM; `gzip -t` ok) |
-| `out/boot/initramfs-slim.sha256` | 104 | `fcb2175e23142eb82a4c214142ec76f3a7552747b3ada011593a3a2e92e98004` | Checksum de `initramfs-slim.cpio.gz` |
+| `out/boot/initramfs-slim.cpio.gz` | 37729358 | `19b615ed59b5ae7f6965da54b345450607ac8c64b637f32ad5753e9a973f81af` | Initramfs Debian `trixie` slim (teste em RAM; `gzip -t` ok) |
+| `out/boot/initramfs-slim.sha256` | 104 | `0b5c62a6f2b746a5ec560be24b8f90e6ddd8550f34b7eeec322100bfc4e7fed1` | Checksum de `initramfs-slim.cpio.gz` |
+| `out/boot/initramfs-slim.kernel.sha256` | 306 | `a092b8a258880a7121e246d0e440a9d62ea50830ace19461089d0335b16161aa` | Manifesto do kernel/DTB/módulos usado pelo slim regenerado; igualdade exigida pelo empacotador |
 | `out/boot/initramfs-mini.cpio.gz` | 1016955 | `7c3e26f1c985221bd1ae0bfdac9dffd93d2edeb3e2bd2ebad4733e6293beb649` | Initramfs mínimo BusyBox/diagnóstico USB (`gzip -t` ok) |
 | `out/boot/initramfs-mini.sha256` | 104 | `b2956497f45ddc604c4f9e51a9eef5f44eab210d0d6e3cce41aede742c3613d4` | Checksum de `initramfs-mini.cpio.gz` |
-| `out/boot/r8s-ram.img` | 65509376 | `cc942728037c3a3eab935cfef1d9b8f81a452a49c929321c19d5c600f4d305dc` | Imagem de teste em RAM (`<= 67108864` B / 64 MiB do buffer `lk3rd`) |
-| `out/boot/r8s-ram.sha256` | 93 | `729477c524abf206c33fcdf4048df93a4d2c3229a7656f81612a07edd3b259d1` | Checksum de `r8s-ram.img` |
-| `out/boot/r8s-mini.img` | 28801024 | `ce095b7fd907b125284e770cd5b35daa5910fc7f15facf35b20b79cfb5704fc3` | Imagem de diagnóstico mínimo em RAM (`<= 67108864` B) |
-| `out/boot/r8s-mini.sha256` | 94 | `493df0ca7b3a6bab5816566d9ce2d21f5cdbd7cbe36650c1957fe967d6d28f14` | Checksum de `r8s-mini.img` |
-| `out/boot/r8s-ufs.img` | 27785216 | `eeeefac7039f1618c64f9bf142ce6f09d5da00019afe860d0a990e1fcea763aa` | Imagem persistente para rootfs em UFS (`root=/dev/sda32`) |
-| `out/boot/r8s-ufs.sha256` | 93 | `c42af3abbaa53a3659f92a2e2c1bbd16a7b79a69607eab151fc5d66e533d4407` | Checksum de `r8s-ufs.img` |
+| `out/boot/r8s-ram.img` | 65513472 | `1de1465c612e13e12b48a4dda6e9e74798a6720a0c87c0a3c3b2970109421a4c` | Imagem de teste em RAM (`<= 67108864` B / 64 MiB do buffer `lk3rd`) |
+| `out/boot/r8s-ram.sha256` | 93 | `e42eaa68811d98d14248cbfe53d509e38e7c70fb2d9a64a8aa77c675b421a5e3` | Checksum de `r8s-ram.img` |
+| `out/boot/r8s-mini.img` | 28801024 | `57e5063c0069173d9c3c4541d29903aceac666066f5556d4f71300aea56e681f` | Imagem de diagnóstico mínimo em RAM (`<= 67108864` B) |
+| `out/boot/r8s-mini.sha256` | 94 | `9156844e0a600b0011ea4446bc49a403c866554ad6cdf16775ae68f238823ad2` | Checksum de `r8s-mini.img` |
+| `out/boot/r8s-ufs.img` | 27785216 | `128af070b27b684c42cf49f6521a464218c57f471cea006760c583b8b2dbc989` | Imagem persistente para rootfs em UFS (`root=/dev/sda32`) |
+| `out/boot/r8s-ufs.sha256` | 93 | `69a2c74a871c566b7a09a0baa31d87840d19958365167e711fee2b219856b4c0` | Checksum de `r8s-ufs.img` |
 | `out/rootfs/ufs-root.img` | 734003200 | `349c999e50a3157c003dd1de392dee69ba12c510f42bf91c03279274c060c112` | Rootfs ext4 Arch Linux ARM mínimo (`<= 734003200` B / 700 MiB) |
 | `out/rootfs/ufs-root.sha256` | 96 | `ae568005b611ad66d0c3266c2e2c2591104043ea024b8ee5b72d3491ce7ff154` | Checksum de `ufs-root.img` |
 | `out/rootfs/arch-base-packages.txt` | 3064 | `ad3ce62702b84670b06759cd7d18f204c9f10a7f96892cb972afd71fe2b00fa8` | 160 pacotes AArch64 instalados; sem pacote `linux-*` de kernel |
@@ -47,7 +50,7 @@ Verificado localmente em: **2026-11-17** por `checks/verify-m1-m4-artifacts.sh` 
 ## Inspeção estrutural (observada fora do aparelho)
 
 1. **Cabeçalhos Android v2 (`sources/mkbootimg/unpack_bootimg.py`)**:
-   - `out/boot/r8s-ram.img`: `boot magic: ANDROID!`, `header version: 2`, `page size: 2048`, `kernel_size: 65163080` (`uniLoader` com `Image` + `exynos990-r8s.dtb` + `initramfs-slim.cpio.gz`), `ramdisk size: 20` (placeholder gzip vazio; sem dupla compactação), `dtb size: 340952`.
+   - `out/boot/r8s-ram.img`: `boot magic: ANDROID!`, `header version: 2`, `page size: 2048`, `kernel_size: 65166888` (`uniLoader` com `Image` + `exynos990-r8s.dtb` + `initramfs-slim.cpio.gz`), `ramdisk size: 20` (placeholder gzip vazio; sem dupla compactação), `dtb size: 340952`.
    - `out/boot/r8s-mini.img`: `boot magic: ANDROID!`, `header version: 2`, `page size: 2048`, `kernel_size: 28454488` (`uniLoader` com `Image` + `exynos990-r8s.dtb` + `initramfs-mini.cpio.gz`), `ramdisk size: 20`, `dtb size: 340952`.
    - `out/boot/r8s-ufs.img`: `boot magic: ANDROID!`, `header version: 2`, `page size: 2048`, `kernel_size: 27437552` (`uniLoader` com `Image` + `exynos990-r8s.dtb` + placeholder gzip vazio), `ramdisk size: 20`, `dtb size: 340952`.
    - `out/boot/lk3rd-r8s.img`: `boot magic: ANDROID!`, `header version: 2`, `page size: 2048`, `kernel_size: 620872`, `ramdisk size: 19`, `dtb size: 340952`, `command line args: LK3RD BOOT IMAGE`.
