@@ -22,6 +22,8 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 
 ## Feito, aguardando revisão
 
+- [codex] commit `5f259df`: confirmação independente de A/B=0x0B encontrada no log Samsung/LineageOS Recovery anterior aos testes (`LT: 0xbb`), fórmula validada na mesma revisão 97369af7bbd6. Evidência e opções em `research/ufs-health.md`; sem nova inicialização/escrita no telefone. Indicador preexistente, sem reparo por patch; instalação persistente ainda depende da estratégia/condição do armazenamento.
+
 - [codex] commit `a53f0cd`: 0107 empacotado e testado por fastboot boot (63.145.984 B, imagem `f05008b7…`), sem mount/flash UFS; quatro DME e falhas AUD/CLKOUT ausentes, UFS G3/2 lanes ativo, seis hashes diretos iguais aos backups, contadores zerados e systemd running. Retorno lk3rd confirmado. Saúde repete 0x0B; mensagem de bus no reboot pendente. Evidência `checks/ufs-clocks-ram.md`.
 
 - [codex] commit `536b4c1`: patch 0107 integrado ao baseline/série; quirk exclusivo Exynos990 evita lote sync rejeitado, CMU_AUD desabilitado junto do provider, PMU sem filho CLKOUT incompatível. Build isolado Image/módulos/DTBs e 23/23 testes PASS. Evidência `research/ufs-clocks-fixes.md`. Sem acesso ao telefone; empacotamento RAM e teste físico pendentes; desgaste UFS não resolvido por software.
@@ -61,7 +63,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 
 ## Revisão
 
-- [ ] [codex] `checks/ufs-clocks-ram.md`: confirmar saúde UFS em Recovery/Android (estimativas A/B repetiram 0x0B) antes de instalação persistente; diagnosticar mensagem system scope bus no reboot. Retorno ao lk3rd foi confirmado, sem comprovar shutdown silencioso ou restauração completa.
+- [ ] [codex] `checks/ufs-clocks-ram.md`: confirmação em driver Samsung atendida em `5f259df` (log antigo LT=0xbb); avaliar condição física/estratégia de armazenamento antes de instalação persistente e diagnosticar mensagem system scope bus no reboot. Retorno ao lk3rd foi confirmado, sem comprovar shutdown silencioso ou restauração completa.
 
 - [ ] [codex] Conferir a árvore de `research/ufs-clocks.md` e `checks/m2-device-test.md` (sem commit): leitura curta separada de escrita/power-mode; CMU_AUD é `pd_aud` disabled, não timeout ao energizar; `sda33` em 4 KiB e 1 MiB são zeros de comprimentos diferentes; “nenhum bloqueia o rootfs” saiu do check. Evidência independente segue em `research/ufs-clocks-codex.md`.
 
