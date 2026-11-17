@@ -21,7 +21,7 @@ Objetivo: instalar um sistema nativo derivado do Omarchy no Samsung **SM-G780F /
 
 ## Trabalho com mais de um agente
 
-Mais de um agente trabalha neste diretório (Gemini/Antigravity e Claude Code). O quadro comum é [COORDENACAO.md](COORDENACAO.md); o histórico é o git.
+Mais de um agente trabalha neste diretório. O quadro comum é [COORDENACAO.md](COORDENACAO.md); o histórico é o git. Papéis, salvo nova instrução do proprietário: `[gemini]` (Antigravity) executa builds, scripts e clones; `[claude]` (Claude Code) revisa com `git log`/`git diff` contra as fontes; o proprietário decide o que é irreversível.
 
 1. Ao iniciar, leia `COORDENACAO.md` e `git log --oneline -10`.
 2. Antes de alterar arquivos, registre em "Em andamento": agente, tarefa e caminhos. Não altere caminhos que outro agente registrou.
