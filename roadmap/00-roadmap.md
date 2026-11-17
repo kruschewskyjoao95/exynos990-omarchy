@@ -1,6 +1,6 @@
 # Roadmap de implementação
 
-Data: 16/11/2026. Alvo: SM-G780F / r8s. M0 e M1 em andamento (ver itens); M2 em diante **pendentes**. A pesquisa inicial está concluída, sujeita à revalidação ao fixar commits.
+Data: 17/11/2026. Alvo: SM-G780F / r8s. M0 parcialmente concluído (inventário e stock `ZTO` verificados; backup de `efs`/`sec_efs` pendente sem `adb root`); artefatos de M1 compilados e verificados no computador ([m1-artifacts.md](../manifests/m1-artifacts.md)); receitas offline de M4 preparadas ([packages-aarch64.md](../manifests/packages-aarch64.md)); **M2 em diante no telefone pendentes**. A pesquisa inicial segue sujeita à validação no hardware.
 
 ## Entrega pretendida
 
@@ -39,17 +39,17 @@ Fontes e receitas de M1 podem avançar enquanto M0 depende do aparelho. A análi
 - [ ] Copiar dados pessoais para fora do telefone e verificar amostras restauradas. Inventário registra "sem dados pessoais a preservar"; falta confirmação do proprietário.
 - [x] Obter firmware stock correspondente e registrar ferramentas e procedimento de recuperação aplicáveis ao estado atual. Evidência: firmware `G780FXXSOFYJ2` (`ZTO`) via `samloader`, hashes em [sources.md](../manifests/sources.md); Download mode registrado no inventário.
 - [ ] Obter backups necessários por método compatível com os privilégios disponíveis; registrar tamanhos e SHA-256. Não considerar um backup dentro do telefone suficiente. Pendente: sem `adb root` não há cópia de `efs`/`sec_efs` (IMEI), que o firmware stock não restaura.
-- [ ] Inspecionar as fontes de flash e restauração antes de qualquer execução; não usar endereços de partição copiados sem conferir o aparelho.
+- [ ] Inspecionar as fontes de flash e restauração antes de qualquer execução; não usar endereços de partição copiados sem conferir o aparelho. Parcial no computador: `checks/test-flash-tools.sh` (11/11 PASS simulado), `packaging/host-tools/m2-preflight.sh` (leitura de `heimdall`/`fastboot`/`adb`/`samloader` e stock `G780FXXSOFYJ2`) e mapa `/dev/block/by-name/` já inventariado (`boot` → `sda13`, `userdata` → `sda32`); execução real via Download mode (`lk3rd-r8s.tar`) + `fastboot` pendente no aparelho.
 
 **Entrega:** inventário e plano de recuperação. **Aprovação:** artefatos acessíveis no computador e modo de recuperação alcançável. A restauração completa será validada no ciclo de instalação; só entrar nesse ciclo aceitando a perda de dados e efeitos irreversíveis descritos pelo port.
 
 ## M1 — Fontes e build reproduzível
 
 - [x] Fixar SHAs do port, kernel, Mesa, lk3rd, uniLoader e Omarchy; guardar procedência e versões das ferramentas. Evidência: [sources.md](../manifests/sources.md), [host-tools.md](../manifests/host-tools.md).
-- [ ] Reproduzir o build documentado do kernel, lk3rd, uniLoader e initramfs slim; o rootfs Debian completo fica fora (decisão de 17/11/2026). Revisar os scripts para o Linux do computador e separar diretórios de saída dos discos reais.
-- [ ] Conferir patches, DTB, firmware, módulos e imagem como um conjunto da mesma compilação.
-- [ ] Construir initramfs mínimo para diagnóstico, imagem de boot e rootfs Arch ARM mínimo (≤ 700 MiB, com `r8s-growroot`); registrar tamanho e hash de cada saída. Parcial em 17/11/2026: `out/boot/lk3rd-r8s.img` (2097152 bytes, SHA-256 `48a15319…86ab`) e `.tar` para Download mode compilados via `packaging/build-env/`; kernel `6.12.0-rc5-next-20241104-r8s` em compilação; initramfs e rootfs pendentes. Nada testado no aparelho.
-- [ ] Revisar uso de containers privilegiados, dispositivos loop, caminhos fixos, permissões e serviços de diagnóstico.
+- [x] Reproduzir o build documentado do kernel, lk3rd, uniLoader e initramfs slim; o rootfs Debian completo fica fora (decisão de 17/11/2026). Receitas em `packaging/build-env/`, logs em `logs/m1-*.log`, saídas em `out/boot/`.
+- [x] Conferir patches, DTB, firmware, módulos e imagem como um conjunto da mesma compilação. Evidência: 24 patches aplicados sem erro, `kernelrelease=6.12.0-rc5-next-20241104-r8s`, QCA6390 integrado, validado em `out/boot/` por `checks/verify-m1-m4-artifacts.sh`.
+- [x] Construir initramfs mínimo para diagnóstico, imagem de boot e rootfs Arch ARM mínimo (≤ 700 MiB, com `r8s-growroot`); registrar tamanho e hash de cada saída. Evidência: [m1-artifacts.md](../manifests/m1-artifacts.md) (`lk3rd-r8s.img` 2097152 B, `r8s-ram.img` 65509376 B ≤ 64 MiB, `r8s-mini.img` 28801024 B ≤ 64 MiB, `r8s-ufs.img` 27785216 B, `initramfs-slim.cpio.gz` 37725548 B, `initramfs-mini.cpio.gz` 1016955 B, `ufs-root.img` 734003200 B / 700 MiB com `e2fsck -fn` ok, módulos `0:0`, `softdog`/pstore/watchdog e 160 pacotes sem kernel genérico). Nada testado no aparelho.
+- [ ] Revisar uso de containers privilegiados, dispositivos loop, caminhos fixos, permissões e serviços de diagnóstico. Em revisão (item 5 de `COORDENACAO.md` para serviços Arch/Omarchy e repetição em ambiente limpo).
 
 **Entrega:** receita executável revisada e artefatos rastreáveis. **Aprovação:** build completo repetido em ambiente limpo com versões fixadas; registrar diferenças de hash se a construção ainda não for determinística. Referências: [base técnica](01-base-s20fe.md) e [cadeia de artefatos](05-build-e-instalacao.md).
 
@@ -75,9 +75,9 @@ Fontes e receitas de M1 podem avançar enquanto M0 depende do aparelho. A análi
 **Entrega:** prova de hardware gráfico e entrada no Arch ARM mínimo. **Aprovação:** renderer de hardware, toque alinhado, terminal e aplicação gráfica utilizáveis, incluindo reinício. Usar periféricos para diagnóstico quando necessário; navegação completa por toque será requisito da sessão final.
 ## M4 — Base Arch ARM e integração do Omarchy
 
-- [ ] Auditar versões e disponibilidade ARM64 de todos os componentes escolhidos; separar essenciais de opcionais.
+- [x] Auditar versões e disponibilidade ARM64 de todos os componentes escolhidos; separar essenciais de opcionais. Evidência preliminar de metadados `.db` (`stable/aarch64`): [packages-aarch64.md](../manifests/packages-aarch64.md) e [packages-aarch64-stable.tsv](../manifests/packages-aarch64-stable.tsv) (108 pacotes resolvidos, 1408,1 MiB instalados; 23 deps por soname e instalação real no aparelho ainda pendentes).
 - [ ] Comparar receitas e patches dos pacotes Omarchy com os pacotes Arch ARM; nome igual não comprova equivalência. Fixar um conjunto compatível conforme [06](06-pacotes-e-desktop.md).
-- [ ] Instalar o Omarchy via `pacman` sobre o Arch ARM mínimo já comprovado (depois do `r8s-growroot`), conservando as imagens recuperáveis.
+- [ ] Instalar o Omarchy via `pacman` sobre o Arch ARM mínimo já comprovado (depois do `r8s-growroot`), conservando as imagens recuperáveis. Receita pós-boot `packaging/omarchy/install-omarchy-r8s.sh` (`--dry-run` e `bash -n` ok) aguardando revisão e M2/M3.
 - [ ] Integrar suporte r8s, serviços, firmware e Mesa; repetir os ensaios de M2/M3 nessa base antes de adicionar o desktop completo.
 - [ ] Portar o conjunto coerente de compositor, shell, temas e comandos do Omarchy para a revisão escolhida. Resolver dependências entre configurações, pacotes e caminhos.
 - [ ] Adaptar comandos de energia, rede, brilho e sessão ao telefone; manter fora da imagem os componentes incompatíveis, com justificativa explícita.
@@ -113,6 +113,6 @@ Rastreamento inicial de arquivos e provas por recurso: [LineageOS e drivers](07-
 
 ## Organização do trabalho
 
-Manter este diretório como projeto de integração. Na implementação, usar checkouts separados dos upstreams, patches pequenos e versões fixadas; criar forks remotos quando houver mudanças concretas a manter. Em 17/11/2026 há documentos, manifestos, scripts adaptados com teste simulado e o primeiro build M1 em andamento (`packaging/build-env/`). Não duplicar árvores inteiras nem desenvolver drivers novos antes de reproduzir a base.
+Manter este diretório como projeto de integração. Na implementação, usar checkouts separados dos upstreams, patches pequenos e versões fixadas; criar forks remotos quando houver mudanças concretas a manter. Em 17/11/2026 há documentos, manifestos (`sources.md`, `host-tools.md`, `packages-aarch64.md`, `m1-artifacts.md`), artefatos M1 compilados em `out/` com verificação automatizada (`checks/test-flash-tools.sh`, `checks/verify-m1-m4-artifacts.sh`, `packaging/host-tools/m2-preflight.sh`), e receita M4 em revisão; nenhum teste foi executado no aparelho. Não duplicar árvores inteiras nem desenvolver drivers novos antes de reproduzir a base.
 
 Dependências dos testes físicos: M0 + M1 → M2 → M3 → M4 → M5. Pesquisa e preparação no computador podem avançar nas frentes independentes. M6 usa a base de teste de M2 ou posterior, sem bloquear a alpha se as limitações forem explícitas. Planejar por resultados medidos; prazo de calendário só depois de M2.
