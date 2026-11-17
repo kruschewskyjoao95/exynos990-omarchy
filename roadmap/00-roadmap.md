@@ -25,7 +25,7 @@ As metas de teste abaixo são critérios propostos para este projeto, não garan
 **Decisão do proprietário (17/11/2026): sem rootfs Debian completo.** O kernel do port serve às duas bases; só o rootfs muda. Sequência:
 
 1. **Computador, em paralelo:** kernel/DTB/módulos, lk3rd, uniLoader, initramfs slim (Debian) e rootfs Arch ARM mínimo (≤ 700 MiB, cabe no buffer de 768 MiB do lk3rd).
-2. **Teste em RAM** (`fastboot boot`, nada gravado): tela, toque e console USB com o initramfs slim. Confirma o kernel isoladamente.
+2. **Teste em RAM** (`fastboot boot`, nada gravado por esse comando): tela, toque e console USB com o initramfs slim. A preparação anterior do lk3rd altera o boot persistentemente; usar imagem crua com Heimdall ou pacote TAR com Odin, conforme [runbook M2](../manifests/m2-runbook.md). Confirma o kernel isoladamente.
 3. **Gravar o Arch mínimo** em `userdata`; o primeiro boot expande a partição (`r8s-growroot`).
 4. **Instalar o Omarchy via `pacman`** sobre o Arch comprovado. O desktop (~1,4 GiB instalado, ver [pacotes](../manifests/packages-aarch64.md)) não cabe na imagem de flash.
 

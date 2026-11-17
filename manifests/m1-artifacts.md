@@ -2,7 +2,7 @@
 
 Verificado localmente em: **2026-11-17** por `checks/verify-m1-m4-artifacts.sh` e `packaging/host-tools/m2-preflight.sh` (após rebuild com `mini`, `package` e correções de serviços/permissões em `ufs-root.img`). Todos os valores abaixo foram **observados nos artefatos em `out/` e `blobs/`**; **nenhum artefato foi gravado ou executado no SM-G780F neste estágio**.
 
-**Atualização codex (17/11/2026):** slim e imagens uniLoader regenerados; valores da tabela abaixo atualizados por leitura dos arquivos. Baseline anterior preservado em `out/validation/baseline`. Rootfs Arch permanece o anterior (sem firmware Bluetooth novo). Resultado completo e limites em [offline-validation.md](offline-validation.md).
+**Estado atual (17/11/2026):** a tabela reflete o baseline port + `0100`, recompilado pelo claude com firmware Wi-Fi fora do kernel; o rootfs inclui firmware Wi-Fi e Bluetooth. O registro anterior do codex, com outros hashes e rootfs sem Bluetooth, é histórico e foi superado. O conjunto experimental está preservado separadamente em `out/validation/series-wifi/`. Primeiro teste e hashes: [m2-runbook.md](m2-runbook.md) e [m2-preflight-2026-11-17.md](m2-preflight-2026-11-17.md). O ensaio de userspace ARM64 está em [offline-validation.md](offline-validation.md).
 
 ## Kernel e cadeia de boot
 
