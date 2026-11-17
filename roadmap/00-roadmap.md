@@ -61,13 +61,13 @@ Fontes e receitas de M1 podem avançar enquanto M0 depende do aparelho. A análi
 
 ## M2 — Reproduzir o Linux básico no aparelho
 
-**Sessão física iniciada (17/11/2026, codex):** cópia externa verificada e acesso root no Recovery confirmados; `lk3rd` gravado em `boot` por ADB após dry-run, modelo/partição/bateria/hashes conferidos. Leitura de retorno dos 2 MiB aprovada; recovery e DTBO preservados. Após reiniciar, fastboot ainda não detectado; aguardando identificar a tela do aparelho. Mini/slim ainda não executados, nenhum rootfs gravado. Evidência parcial em [m2-device-test.md](../checks/m2-device-test.md). Os registros anteriores de "sem aparelho" são históricos.
+**Sessão física (17/11/2026, codex):** backup externo verificado; lk3rd instalado por ADB root, readback aprovado e fastboot confirmado. Mini e slim iniciaram Linux AArch64 em RAM; console USB funcional, nenhuma UFS montada; slim com systemd `running`, 0 unidades falhadas. Touchscreen e DRM registrados, sem teste funcional de toque/compositor. Há timeouts Bluetooth e avisos de UFS/clocks a investigar. O lk3rd separou a GPT: `sda13=lk3rd/2 MiB`, `sda33=boot/57 MiB`, `userdata=sda32` preservado. Nenhum rootfs gravado; M2 completo ainda pendente. Evidência: [m2-device-test.md](../checks/m2-device-test.md). Os registros anteriores de "sem aparelho" são históricos.
 
 **Preparação offline adicional (17/11/2026, codex):** empacotamento agora rejeita kernel/DTB/módulos com hash divergente e slim sem registro de procedência ou de outro build, mesmo com release igual. O slim deve ser regenerado pela receita para produzir `initramfs-slim.kernel.sha256`; nenhum registro foi retroativamente criado para os artefatos atuais. Inspeção ELF do pacote Mesa existente encontrou dependência runtime `libSPIRV-Tools.so`; receita corrigida (`pkgrel=2`, `depends=spirv-tools`) e pacote `mesa-g77-*-2` regenerado (17/11/2026). Testes de build: 17/17; instalador: 6/6; flash simulado: 18/18; integridade dos artefatos existentes: 55/55. Isso não conclui o build integral da série nem os testes físicos.
 
-- [ ] Preparar lk3rd pelo procedimento compatível com o estado inventariado em M0.
-- [ ] Após essa preparação, testar kernel e initramfs em RAM; confirmar que esse teste não monta armazenamento em escrita. Instalar lk3rd anteriormente já é uma alteração persistente.
-- [ ] Recolher logs de boot e testar console de recuperação antes de instalar o rootfs.
+- [x] Preparar lk3rd pelo procedimento compatível com M0: ADB root no Recovery, upload e readback verificados em 17/11/2026; fastboot do lk3rd confirmado. GPT separada automaticamente pelo loader, conforme [evidência](../checks/m2-device-test.md).
+- [x] Testar kernel/initramfs em RAM: mini e slim iniciaram, consoles responderam, nenhuma partição UFS montada. Instalação do lk3rd e ajuste da GPT anteriores foram persistentes.
+- [x] Recolher logs e testar console USB de diagnóstico antes de instalar o rootfs. Logs em `logs/m2-*`; recuperação completa da ROM ainda pendente.
 - [ ] Instalar o rootfs Arch ARM mínimo em `userdata` apenas no ciclo de instalação planejado; validar o destino real antes da gravação.
 - [ ] Registrar cinco boots consecutivos, rede, toque, renderização, alimentação e temperaturas em repouso e durante 30 minutos de carga controlada.
 - [ ] Guardar uma imagem conhecida como funcional e testar retorno a ela.
