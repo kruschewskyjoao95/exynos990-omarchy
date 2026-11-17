@@ -15,6 +15,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 6. [proprietário] Decidir sobre backup de `efs`/`sec_efs` (IMEI) e autorizar explicitamente o início de **M2** (`lk3rd` + `fastboot boot r8s-mini.img` / `r8s-ram.img` em RAM).
 7. [gemini] (após autorização de M2) Executar `packaging/host-tools/m2-preflight.sh`, gravar `lk3rd`, testar `r8s-mini.img` / `r8s-ram.img` em RAM e registrar logs/resultados (V2–V3).
 7b. [gemini] Compilar o pacote `packaging/mesa-g77/` (nenhum `.pkg.tar.*` existe em 17/11/2026 06:20). Sem ele, `install-omarchy-r8s.sh` aborta ou roda sem GPU (`--allow-stock-mesa`). Pode ser feito no computador antes de M2; não precisa do aparelho.
+9. [claude/gemini] (depois do teste em RAM do M2) DVFS da GPU: ACPM G3D = id 10 + tabela de 7 frequências, ver `roadmap/07` linha "Frequência variável da GPU". Primeiro só leitura de `get_rate(10)` no aparelho.
 8. [claude] Revisar logs/artefatos gerados em M2–M4 no aparelho real antes de avançar para M5.
 
 ## Feito, aguardando revisão
