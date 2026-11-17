@@ -20,6 +20,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 ## Feito, aguardando revisão
 
 <!-- - [agente] commit <sha>: resumo -->
+- [codex] commit `e28e769`: corrige PR6 — Heimdall recebe `lk3rd-r8s.img`, TAR reservado ao Odin, PIT/autorização antes da escrita; referências do roadmap e nota obsoleta do manifesto corrigidas. Testes: runbook 5/5 e kernel-sets 3/3; TAR/LZ4 rejeitados no comando e payload descomprimido igual ao IMG byte a byte. Sem aparelho/flash.
 - [claude] commit `de7cc81`: PR6 correção de roteiro e manifesto (empilhado no PR5) — backup-verify via `backup-manifest.sha256`, Heimdall `--BOOT`/`boot.img.lz4` definido, `m1-artifacts.md` com baseline atual. Regressão: build 17/17, instalador 10/10, artefatos 56/56.
 - [claude] commit `1c82566`: PR5 escrituração M1 (empilhado no PR4) — item de containers/loop marcado com evidência; nota Mesa `-2` corrigida. Regressão: runbook 2/2, kernel-sets 3/3, build 17/17, artefatos 56/56.
 - [claude] commit `bef20a2`: PR4 pré-requisitos offline M2 (empilhado no PR3) — runbook + revisão containers/loop + guarda `checks/test-m2-runbook.py` 2/2. Regressão: build 17/17, instalador 10/10, skills 4/4, flash 18/18, artefatos 56/56. Sem aparelho.
@@ -48,6 +49,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 ## Revisão
 
 <!-- - [revisor] <sha ou arquivo>: problema → ação esperada. Marque [x] quando o autor resolver. -->
+- [x] [codex] `de7cc81`, `manifests/m2-runbook.md`: comando passava TAR Odin como conteúdo BOOT no Heimdall; teste só buscava palavras → imagem crua + teste do comando e equivalência do payload, corrigidos em `e28e769`. Transporte no telefone permanece pendente.
 - [ ] [claude] revisão de `019c589..faa2c16` (17/11/2026): aprovada. Reproduzido no computador: build 17/17, instalador 10/10, flash simulado 18/18, artefatos 56/56; Mesa `-2` com SHA `4a62c5a3…`, `depend = spirv-tools` e `NEEDED libSPIRV-Tools.so`; `r8s-ram.img` 65.513.472 B. Conferido no Omarchy do host: o hook `omarchy-update-pacman-guard` aceita `OMARCHY_ALLOW_DIRECT_PACMAN=1`, `omarchy-system-lock` existe e não bloqueia, e `/etc/os-release` não pertence a pacote (`/usr/lib/os-release` vem de `filesystem`). Pendente: `adb_require_single_root_device` exige `ro.product.model=SM-G780F` e `ro.product.device=r8s`, valores não lidos no LineageOS Recovery. Se forem outros, `flash-boot.sh`/`restore-stock.sh` recusam (falha segura). Ação: ler `getprop` no recovery antes de depender desses scripts.
 - [x] [codex] `packaging/build-env/build-arch-rootfs.sh`: apagava a imagem anterior antes de instalar pacotes e removia o chroot mesmo após falha de unmount → staging até fsck/tamanho aprovados e limpeza sem percorrer mounts; corrigido em `e86502e`. Renames de imagem/manifestos não são transação; conferir checksum antes de usar.
 - [x] [codex] `packaging/host-tools/{adb-common,flash-boot,restore-stock}.sh`: alvo sem identidade validada, upload só conferido depois de gravar e imagem vazia aceita → modelo/device, hash remoto antes da escrita e tamanho positivo; corrigido em `e86502e`, testes com ADB simulado.
