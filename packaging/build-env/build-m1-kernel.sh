@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 IMAGE="${R8S_KBUILD_IMAGE:-r8s-kbuild:trixie}"
 NPROC="${R8S_NPROC:-$(nproc)}"
-MODE="${1:-all}" # all | lk3rd | kernel | package
+MODE="${1:-all}" # all | lk3rd | kernel | dtbs | package
 
 mkdir -p "$ROOT/out/work" "$ROOT/out/boot" "$ROOT/out/staging" "$ROOT/logs"
 
@@ -37,7 +37,7 @@ build_lk3rd() {
   sha256sum /work/out/boot/lk3rd-r8s.img /work/out/boot/lk3rd-r8s.tar | tee /work/out/boot/lk3rd-r8s.sha256
 }
 
-build_kernel() {
+prepare_kernel_tree() {
   echo "== [M1] Preparing & patching kernel 6.12.0-rc5 (r8s) =="
   rm -rf /work/out/work/linux
   rsync -a --exclude=".git" /work/sources/linux/ /work/out/work/linux/
@@ -48,6 +48,12 @@ build_kernel() {
     echo "Applying $(basename "$p")"
     git apply "$p"
   done
+  if compgen -G "/work/packaging/kernel-patches/*.patch" > /dev/null; then
+    for p in /work/packaging/kernel-patches/*.patch; do
+      echo "Applying local $(basename "$p")"
+      git apply "$p"
+    done
+  fi
   [ -f arch/arm64/boot/dts/exynos/exynos990-r8s.dts ] || {
     echo "ERROR: exynos990-r8s.dts missing after patches" >&2
     exit 1
@@ -60,7 +66,22 @@ build_kernel() {
   make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
   REL=$(make -s ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- kernelrelease)
   echo "kernelrelease=$REL" > /work/out/boot/kernel-release.txt
+}
 
+build_dtbs() {
+  prepare_kernel_tree
+  [ -f /work/out/boot/Image ] && [ -f "/work/out/modules-$REL.tar.gz" ] || {
+    echo "ERROR: missing Image or modules-$REL.tar.gz; run full kernel build" >&2
+    exit 1
+  }
+  echo "== [M1] Compiling r8s DTB (-j$NPROC) =="
+  make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j"$NPROC" exynos/exynos990-r8s.dtb
+  cp arch/arm64/boot/dts/exynos/exynos990-r8s.dtb /work/out/boot/exynos990-r8s.dtb
+  sha256sum /work/out/boot/Image /work/out/boot/exynos990-r8s.dtb "/work/out/modules-$REL.tar.gz" | tee /work/out/boot/kernel.sha256
+}
+
+build_kernel() {
+  prepare_kernel_tree
   echo "== [M1] Compiling Image, dtbs, modules (-j$NPROC) =="
   make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j"$NPROC" Image dtbs modules
 
@@ -146,6 +167,7 @@ package_uniloader() {
 case "$MODE" in
   lk3rd) build_lk3rd ;;
   kernel) build_kernel ;;
+  dtbs) build_dtbs ;;
   package) package_uniloader ;;
   all) build_lk3rd; build_kernel; package_uniloader ;;
   *) echo "unknown mode: $MODE" >&2; exit 2 ;;
