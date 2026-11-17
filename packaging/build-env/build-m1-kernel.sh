@@ -83,10 +83,9 @@ prepare_kernel_tree() {
     exit 1
   }
 
-  mkdir -p firmware/ath11k/QCA6390/hw2.0
-  cp /work/blobs/firmware/ath11k/QCA6390/hw2.0/{amss.bin,m3.bin,board-2.bin} firmware/ath11k/QCA6390/hw2.0/
-
   cp /work/sources/port/kernel/config/r8s.config .config
+  # ath11k is a module: firmware comes from the rootfs/initramfs so BDF can be swapped without rebuilding.
+  scripts/config --set-str EXTRA_FIRMWARE ""
   if [ "$PATCHSET" = series ]; then
     scripts/config -e DEVFREQ_THERMAL
   fi

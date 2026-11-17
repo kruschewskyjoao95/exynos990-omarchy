@@ -117,6 +117,8 @@ rm -rf "$W/lib/modules/$KVER"/kernel/drivers/gpu/drm/{nouveau,amd,radeon,i915} 2
 rm -rf "$W/lib/modules/$KVER"/kernel/drivers/net/{ethernet,wireless/{intel,ath/ath10k,marvell,realtek,mediatek}} 2>/dev/null || true
 rm -rf "$W/lib/modules/$KVER"/kernel/{fs/btrfs,sound,net/can,net/nfc,net/dsa,drivers/fpga} 2>/dev/null || true
 depmod -b "$W" "$KVER"
+install -d "$W/lib/firmware/ath11k/QCA6390/hw2.0"
+cp /work/blobs/firmware/ath11k/QCA6390/hw2.0/{amss.bin,m3.bin,board-2.bin} "$W/lib/firmware/ath11k/QCA6390/hw2.0/"
 
 ( cd "$W" && find . -print0 | cpio --null -o -H newc --quiet ) | gzip -9 > "$OUT"
 cmp /tmp/slim-kernel.sha256 /work/out/boot/kernel.sha256

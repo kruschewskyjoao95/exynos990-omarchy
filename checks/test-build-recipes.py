@@ -24,7 +24,7 @@ class BuildRecipes(unittest.TestCase):
         self.put("sources/port/kernel/config/r8s.config", "fixture")
         self.put("sources/linux/arch/arm64/boot/dts/exynos/exynos990-r8s.dts", "fixture")
         self.put("sources/linux/scripts/config", '#!/bin/sh\necho "$*" >> "$TRACE"\n', True)
-        for name in ("amss.bin", "m3.bin", "board-2.bin"):
+        for name in ("amss.bin", "m3.bin", "board-2.bin", "board-2.r8s.bin"):
             self.put(f"blobs/firmware/ath11k/QCA6390/hw2.0/{name}", "fixture")
         self.series = [BASELINE, "0102-gpu.patch", "0103-idle.patch",
                        "0104-i2c.patch", "0105-suspend.patch"]
@@ -83,14 +83,14 @@ esac
         result = self.run_recipe()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual((self.root / "trace").read_text().splitlines(),
-                         ["apply 0001-port.patch", f"apply {BASELINE}"])
+                         ["apply 0001-port.patch", f"apply {BASELINE}", "--set-str EXTRA_FIRMWARE "])
 
     def test_series_order_and_thermal_config(self):
         result = self.run_recipe(patchset="series")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual((self.root / "trace").read_text().splitlines(),
                          ["apply 0001-port.patch"] + [f"apply {p}" for p in self.series]
-                         + ["-e DEVFREQ_THERMAL"])
+                         + ["--set-str EXTRA_FIRMWARE ", "-e DEVFREQ_THERMAL"])
 
     def test_dtbs_rejected_before_changing_outputs(self):
         self.put("out/boot/kernel-release.txt", "existing")

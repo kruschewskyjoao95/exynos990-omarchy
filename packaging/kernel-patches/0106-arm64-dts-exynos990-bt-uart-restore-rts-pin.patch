@@ -1,0 +1,25 @@
+From: Claude <noreply@anthropic.com>
+Date: Tue, 17 Nov 2026 12:30:00 -0300
+Subject: [PATCH] arm64: dts: exynos990: give the Bluetooth UART its RTS pin
+
+The stock DT (`uart@10840000`) puts all four pins gpq0-0..3 on the UART
+function. The port uses `uart1_bus_norts`, so the host cannot throttle the
+QCA6390; hci_qca enables flow control and at 3 Mbit/s the 256 B RX FIFO
+fills in ~0.85 ms. Dropped bytes break H4 framing, matching the
+"desynchronises after hundreds of segments" symptom
+(research/wifi-bt-firmware.md). Use `uart1_bus_single` (4 pins) as stock.
+
+Untested on the device.
+
+---
+--- a/arch/arm64/boot/dts/exynos/exynos990.dtsi
++++ b/arch/arm64/boot/dts/exynos/exynos990.dtsi
+@@ -913,7 +913,7 @@
+ 				clock-names = "uart", "clk_uart_baud0";
+ 				samsung,uart-fifosize = <256>;
+ 				pinctrl-names = "default";
+-				pinctrl-0 = <&uart1_bus_norts>;
++				pinctrl-0 = <&uart1_bus_single>;
+ 				status = "okay";
+ 
+ 				bluetooth {
