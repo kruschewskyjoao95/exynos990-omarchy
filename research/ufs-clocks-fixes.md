@@ -1,6 +1,6 @@
 # Correções UFS / CMU_AUD / CLKOUT — 17/11/2026
 
-Implementação: `packaging/kernel-patches/0107-r8s-ufs-sync-and-unavailable-clocks.patch`, aplicado pela receita tanto no baseline quanto na série experimental. Base e reprodução física: [investigação independente](ufs-clocks-codex.md). O patch não foi executado no telefone.
+Implementação: `packaging/kernel-patches/0107-r8s-ufs-sync-and-unavailable-clocks.patch`, aplicado pela receita tanto no baseline quanto na série experimental. Base e reprodução física: [investigação independente](ufs-clocks-codex.md). Atualização: **patch executado em RAM no telefone**, três achados ausentes e seis leituras diretas aprovadas; [resultado físico e limitações](../checks/ufs-clocks-ram.md). As seções abaixo descrevem o build inicial, anterior ao empacotamento/teste físico.
 
 ## Mudanças
 
