@@ -10,6 +10,7 @@ Aplicados depois dos 24 patches do port (`sources/port/kernel/patches`), sobre `
 | `0103` C2 nos núcleos M5 | claude (subagente) | sim | Estado registrado desligado; liga por `/sys/devices/system/cpu/cpu7/cpuidle/state1/disable` | `research/cpuidle-m5.md` |
 | `0104` bateria / I2C | claude (subagente) | sim | Repete transferências HSI2C que estouram o tempo (como o kernel Samsung, em todos os barramentos) + 4500 mAh e limites de saúde no DTS. Muda comportamento padrão: uma escrita que estourou o tempo pode ser reenviada | `research/fuelgauge.md` |
 | `0105` suspensão profunda | claude (subagente) | sim | Nada muda sem `exynos990_cpu_wake.sleep_prep=` (bit 0: fontes de wake, bit 1: dica SLEEP) ou `psci.system_sleep_power_state=0` | `research/suspend.md` |
+| `0106` RTS da UART do Bluetooth | claude | **não** | Opt-in manual (como `0101`): troca `uart1_bus_norts` por `uart1_bus_single` em `bt_uart`. Só aplicar depois dos testes B1/B2 de `research/wifi-bt-firmware.md` indicarem perda de RX sem RTS; checado só com `git apply --check` | `research/wifi-bt-firmware.md` |
 
 O DTB vai dentro da imagem de boot junto com o kernel: os dois têm de sair do mesmo build (o `0103` depende disso).
 
