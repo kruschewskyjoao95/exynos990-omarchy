@@ -14,6 +14,7 @@ mkdir -p "$TMP/bin" "$TMP/bk" "$TMP/dev"
 dd if=/dev/zero bs=1024 count=1024 status=none | tr '\0' 'S' > "$TMP/bk/stock-boot.img"
 dd if=/dev/zero bs=1024 count=512  status=none | tr '\0' 'N' > "$TMP/new-boot.img"
 dd if=/dev/zero bs=1024 count=2048 status=none | tr '\0' 'B' > "$TMP/big-boot.img"
+: > "$TMP/empty-boot.img"
 cp "$TMP/bk/stock-boot.img" "$TMP/dev/boot.bin"
 
 STOCK_HASH=$(sha256sum "$TMP/bk/stock-boot.img" | awk '{print $1}')
@@ -44,6 +45,9 @@ case "${1:-}" in
     ;;
   push)
     cp "$2" "$STATE/pushed.img"
+    if [ "${MOCK_UPLOAD_CORRUPT:-0}" = "1" ]; then
+      printf corrupt > "$STATE/pushed.img"
+    fi
     ;;
   exec-out)
     shift
@@ -54,6 +58,9 @@ case "${1:-}" in
     cmd="$*"
     case "$cmd" in
       "id -u") echo "${MOCK_UID:-0}" ;;
+      "getprop ro.product.model") echo "${MOCK_MODEL-SM-G780F}" ;;
+      "getprop ro.product.device") echo "${MOCK_DEVICE-r8s}" ;;
+      "sha256sum /data/local/tmp/"*) sha256sum "$STATE/pushed.img" ;;
       *"readlink -f /dev/block/by-name/boot"*) echo "/dev/block/sda14" ;;
       *"readlink -f /dev/block/by-name/recovery"*) echo "/dev/block/sda15" ;;
       *"/sys/class/block/sda14/size"*) echo "2048" ;; # 1 MiB
@@ -89,6 +96,7 @@ chmod +x "$TMP/bin/adb"
 export PATH="$TMP/bin:$PATH"
 export MOCK_ADB_STATE="$TMP/dev"
 export R8S_BACKUPS_DIR="$TMP/bk"
+unset ANDROID_SERIAL
 
 expect_fail() {
   local label=$1 expected_rc=$2; shift 2
@@ -115,6 +123,7 @@ MOCK_UID=2000 expect_fail "non-root-adb" 5 "$TOOLS/flash-boot.sh" "$TMP/new-boot
 
 # 4. Oversized image rejected
 expect_fail "oversized-image" 7 "$TOOLS/flash-boot.sh" "$TMP/big-boot.img"
+expect_fail "empty-image" 7 "$TOOLS/flash-boot.sh" "$TMP/empty-boot.img" --write
 
 # 5. Low battery rejected
 MOCK_BATT=15 expect_fail "low-battery" 8 "$TOOLS/flash-boot.sh" "$TMP/new-boot.img"
@@ -124,6 +133,16 @@ mv "$TMP/bk/stock-backup-verify.txt" "$TMP/bk/stock-backup-verify.txt.bak"
 expect_fail "missing-hash-manifest-restore" 8 "$TOOLS/restore-stock.sh" boot
 expect_fail "missing-hash-manifest-flash" 6 "$TOOLS/flash-boot.sh" "$TMP/new-boot.img"
 mv "$TMP/bk/stock-backup-verify.txt.bak" "$TMP/bk/stock-backup-verify.txt"
+
+# Wrong/missing identity and corrupt uploads must stop before any partition write.
+MOCK_MODEL=SM-G780G expect_fail "wrong-model-flash" 5 "$TOOLS/flash-boot.sh" "$TMP/new-boot.img" --write
+MOCK_MODEL=SM-G780G expect_fail "wrong-model-restore" 5 "$TOOLS/restore-stock.sh" boot --write
+MOCK_MODEL= expect_fail "missing-model" 5 "$TOOLS/flash-boot.sh" "$TMP/new-boot.img" --write
+MOCK_DEVICE=r8q expect_fail "wrong-device" 5 "$TOOLS/flash-boot.sh" "$TMP/new-boot.img" --write
+MOCK_UPLOAD_CORRUPT=1 expect_fail "corrupt-upload-flash" 6 "$TOOLS/flash-boot.sh" "$TMP/new-boot.img" --write
+MOCK_UPLOAD_CORRUPT=1 expect_fail "corrupt-upload-restore" 6 "$TOOLS/restore-stock.sh" boot --write
+[ ! -f "$TMP/dev/wrote" ] || { echo "FAIL: wrote before identity/upload verification"; exit 1; }
+[ "$(sha256sum "$TMP/dev/boot.bin" | awk '{print $1}')" = "$STOCK_HASH" ] || exit 1
 
 # 7. Dry-run succeeds without modifying mock boot.bin
 "$TOOLS/flash-boot.sh" "$TMP/new-boot.img" >/dev/null

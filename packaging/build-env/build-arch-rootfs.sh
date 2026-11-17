@@ -123,15 +123,15 @@ Server = $MIRROR/\$repo
 Server = $MIRROR/\$repo
 EOF
 
-IMG=/work/out/rootfs/ufs-root.img
+STAGE=$(mktemp -d /work/out/rootfs/.build-XXXXXX)
+IMG="$STAGE/ufs-root.img"
 MNT=/tmp/archmnt
-rm -rf "$IMG" "$MNT"
 mkdir -p "$MNT"
 
 cleanup() {
-  set +e
-  umount -R "$MNT/sys" "$MNT/proc" "$MNT/dev" 2>/dev/null || umount -l "$MNT/dev" 2>/dev/null
-  rm -rf "$MNT"
+  # Never delete the chroot after a failed unmount: /dev may still be bound.
+  umount -R "$MNT/sys" "$MNT/proc" "$MNT/dev" 2>/dev/null || true
+  rm -rf "$STAGE"
 }
 trap cleanup EXIT
 
@@ -359,7 +359,7 @@ chmod 0600 "$MNT/home/$R8S_USER/.ssh/authorized_keys"
 chroot "$MNT" chown -R "$R8S_USER:$R8S_USER" "/home/$R8S_USER/.ssh"
 
 # Record installed package manifest before cleanup
-pacman --root "$MNT" --dbpath "$MNT/var/lib/pacman" -Q > /work/out/rootfs/arch-base-packages.txt
+pacman --root "$MNT" --dbpath "$MNT/var/lib/pacman" -Q > "$STAGE/arch-base-packages.txt"
 rm -rf "$MNT/var/cache/pacman/pkg"/* "$MNT/var/lib/pacman/sync"/* "$MNT/tmp"/* "$MNT/var/tmp"/*
 
 umount -R "$MNT/sys" "$MNT/proc" "$MNT/dev"
@@ -369,7 +369,6 @@ du -sh "$MNT"
 truncate -s "${SIZE_MB}M" "$IMG"
 mkfs.ext4 -q -F -L r8sroot -m 0 -O ^metadata_csum_seed -d "$MNT" "$IMG"
 rm -rf "$MNT"
-trap - EXIT
 
 e2fsck -fn "$IMG"
 BYTES=$(stat -c%s "$IMG")
@@ -377,5 +376,11 @@ if [ "$BYTES" -gt 734003200 ]; then
   echo "ERROR: ufs-root.img ($BYTES bytes) exceeds 700 MiB!" >&2
   exit 1
 fi
-sha256sum "$IMG" | tee /work/out/rootfs/ufs-root.sha256
+(cd "$STAGE" && sha256sum ufs-root.img) > "$STAGE/ufs-root.sha256"
+# Publish only after validation; the checksum is the last completion marker.
+# shortcut: the three renames are not a transaction; use versioned bundles for concurrent builds.
+mv "$IMG" /work/out/rootfs/ufs-root.img
+mv "$STAGE/arch-base-packages.txt" /work/out/rootfs/arch-base-packages.txt
+mv "$STAGE/ufs-root.sha256" /work/out/rootfs/ufs-root.sha256
+cat /work/out/rootfs/ufs-root.sha256
 ' 2>&1 | tee "$ROOT/logs/m1-arch-rootfs.log"

@@ -4,6 +4,7 @@ import hashlib
 import os
 from pathlib import Path
 import subprocess
+import tarfile
 import tempfile
 import unittest
 
@@ -36,7 +37,7 @@ args = sys.argv[1:]
 for i, arg in enumerate(args):
     if arg == "-e":
         key, value = args[i + 1].split("=", 1)
-        os.environ[key] = value
+        os.environ[key] = value.replace("/work", os.environ["FIXTURE"])
 script = args[args.index("-c") + 1].replace("/tmp", os.environ["FIXTURE"] + "/tmp")
 script = script.replace("/work", os.environ["FIXTURE"])
 os.execvp("bash", ["bash", "-euo", "pipefail", "-c", script])
@@ -72,8 +73,11 @@ esac
         env = self.env.copy()
         if patchset is not None:
             env["R8S_KERNEL_PATCHSET"] = patchset
-        return subprocess.run(["bash", str(self.root / "packaging/build-env" / name), mode],
-                              env=env, text=True, capture_output=True)
+        args = ["bash", str(self.root / "packaging/build-env" / name)]
+        if mode:
+            args.append(mode)
+        return subprocess.run(args, env=env, text=True, capture_output=True,
+                              stdin=subprocess.DEVNULL)
 
     def test_default_excludes_experimental_patches(self):
         result = self.run_recipe()
@@ -113,7 +117,7 @@ esac
         self.put("packaging/kernel-patches/series", "# no patches\n\n")
         self.assertNotEqual(self.run_recipe(patchset="series").returncode, 0)
 
-    def test_bluetooth_preflight_checks_both_blobs(self):
+    def prepare_arch_fixture(self):
         for name in (ROOT / "packaging/rootfs-glue").iterdir():
             if name.is_file():
                 self.put(f"packaging/rootfs-glue/{name.name}", "fixture")
@@ -123,6 +127,9 @@ esac
             self.put(path, name)
             entries.append(f"{hashlib.sha256(name.encode()).hexdigest()}  {path}\n")
         self.put("manifests/bluetooth-firmware.sha256", "".join(entries))
+
+    def test_bluetooth_preflight_checks_both_blobs(self):
+        self.prepare_arch_fixture()
         result = self.run_recipe("build-arch-rootfs.sh", "--dry-run")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         for name in ("htbtfw20.tlv", "htnv20.bin"):
@@ -133,6 +140,77 @@ esac
                 (self.root / path).unlink()
                 self.assertNotEqual(self.run_recipe("build-arch-rootfs.sh", "--dry-run").returncode, 0)
                 self.put(path, name)
+
+    def prepare_arch_build(self):
+        self.prepare_arch_fixture()
+        self.put("key.pub", "test-public-key")
+        self.env.update(R8S_USERPW="test-only", R8S_SSH_PUBKEY_FILE=str(self.root / "key.pub"))
+        self.put("out/boot/kernel-release.txt", "kernelrelease=fixture-r8s\n")
+        self.put("module/modules.dep", "")
+        with tarfile.open(self.root / "out/modules-fixture-r8s.tar.gz", "w:gz") as archive:
+            archive.add(self.root / "module/modules.dep", arcname="modules.dep")
+        for name in ("ufs-root.img", "ufs-root.sha256", "arch-base-packages.txt"):
+            self.put(f"out/rootfs/{name}", "previous-good-artifact")
+        self.put("blobs/firmware/ath11k/QCA6390/hw2.0/Notice.txt", "fixture")
+        for name in ("r8s-charge-limit.sh", "r8s-charge-limit.rules", "r8s-netwatch.sh", "r8s-netwatch.service"):
+            self.put(f"sources/port/device/{name}", "fixture")
+        for command in ("curl", "bsdtar", "pacman-key", "mount", "chroot", "chown"):
+            self.put(f"bin/{command}", "#!/bin/sh\nexit 0\n", True)
+        self.put("bin/sha256sum", '''#!/bin/sh
+if [ "$*" = "-c -" ]; then cat >/dev/null; exit 0; fi
+exec /usr/bin/sha256sum "$@"
+''', True)
+        self.put("bin/pacman", '''#!/bin/sh
+case "$*" in
+  *" -Q") echo "base 1" ;;
+  *)
+    MNT="$FIXTURE/tmp/archmnt"
+    touch "$MNT/dev/host-sentinel"
+    [ "${FAIL_AT:-}" != install ] || exit 42
+    mkdir -p "$MNT/etc/ssh/sshd_config.d" "$MNT/etc/systemd/system" "$MNT/etc/pacman.d"
+    printf "[options]\\n#IgnorePkg =\\n[core]\\n" > "$MNT/etc/pacman.conf" ;;
+esac
+''', True)
+        self.put("bin/umount", '#!/bin/sh\n[ "${FAIL_AT:-}" != install ]\n', True)
+        self.put("bin/mkfs.ext4", '''#!/bin/bash
+for name in htbtfw20.tlv htnv20.bin; do
+  cmp "$FIXTURE/tmp/archmnt/usr/lib/firmware/qca/$name" "$FIXTURE/blobs/r8s-device/vendor/root/firmware/$name" || exit 40
+done
+printf new-image > "${@: -1}"
+''', True)
+        self.put("bin/e2fsck", '#!/bin/sh\n[ "${FAIL_AT:-}" != fsck ]\n', True)
+
+    def assert_previous_rootfs_preserved(self):
+        for name in ("ufs-root.img", "ufs-root.sha256", "arch-base-packages.txt"):
+            self.assertEqual((self.root / "out/rootfs" / name).read_text(), "previous-good-artifact")
+
+    def test_install_failure_preserves_image_and_busy_mount_tree(self):
+        self.prepare_arch_build()
+        self.env["FAIL_AT"] = "install"
+        result = self.run_recipe("build-arch-rootfs.sh", "")
+        self.assertEqual(result.returncode, 42, result.stdout + result.stderr)
+        self.assertTrue((self.root / "tmp/archmnt/dev/host-sentinel").exists(),
+                        "cleanup traversed a tree whose unmount failed")
+        self.assert_previous_rootfs_preserved()
+
+    def test_fsck_failure_preserves_previous_image_and_manifests(self):
+        self.prepare_arch_build()
+        self.env["FAIL_AT"] = "fsck"
+        result = self.run_recipe("build-arch-rootfs.sh", "")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Target rootfs tree size", result.stdout, result.stderr)
+        self.assert_previous_rootfs_preserved()
+
+    def test_success_publishes_verified_image_and_bluetooth(self):
+        self.prepare_arch_build()
+        result = self.run_recipe("build-arch-rootfs.sh", "")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        image = self.root / "out/rootfs/ufs-root.img"
+        self.assertEqual(image.read_bytes(), b"new-image")
+        manifest = (self.root / "out/rootfs/ufs-root.sha256").read_text()
+        self.assertIn(hashlib.sha256(image.read_bytes()).hexdigest(), manifest)
+        self.assertIn("ufs-root.img", manifest)
+        self.assertEqual((self.root / "out/rootfs/arch-base-packages.txt").read_text(), "base 1\n")
 
 
 if __name__ == "__main__":

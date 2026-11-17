@@ -48,7 +48,19 @@ upsert_marked_block() {
 
 if [ "$DRY_RUN" = "1" ]; then
   log "DRY-RUN: user=$TARGET_USER repo=$OMARCHY_REPO_URL sddm_autologin=$SDDM_AUTOLOGIN allow_stock_mesa=$ALLOW_STOCK_MESA mesa_g77_pkg=${MESA_G77_PKG:-none}"
+  log "Preview only: target hardware and package installation are not validated."
   exit 0
+fi
+
+[ "$(uname -m)" = aarch64 ] || { echo "ERROR: this installer requires aarch64 r8s" >&2; exit 1; }
+if [ ! -r /sys/firmware/devicetree/base/compatible ] ||
+   ! tr '\0' '\n' < /sys/firmware/devicetree/base/compatible | grep -Fxq 'samsung,r8s'; then
+  echo "ERROR: this installer requires the samsung,r8s device tree" >&2
+  exit 1
+fi
+if [ ! -r /etc/os-release ] || ! grep -Eq '^ID="?archarm"?$' /etc/os-release; then
+  echo "ERROR: this installer requires the Arch Linux ARM rootfs" >&2
+  exit 1
 fi
 
 [ "$(id -u)" -eq 0 ] || { echo "must run as root (use sudo)" >&2; exit 1; }

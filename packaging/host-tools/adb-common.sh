@@ -4,7 +4,7 @@
 # portability, explicit single-device selection, and strict backup verification.
 
 adb_require_single_root_device() {
-  local devices count
+  local devices count model device
   if [ -n "${ANDROID_SERIAL:-}" ]; then
     adb -s "$ANDROID_SERIAL" get-state >/dev/null 2>&1 || {
       echo "no device matching ANDROID_SERIAL=$ANDROID_SERIAL" >&2
@@ -28,10 +28,26 @@ adb_require_single_root_device() {
     echo "need adb root (adb shell id -u != 0)" >&2
     return 5
   fi
+  model=$(adb_cmd shell getprop ro.product.model | tr -d '\r')
+  device=$(adb_cmd shell getprop ro.product.device | tr -d '\r')
+  if [ "$model" != "SM-G780F" ] || [ "$device" != "r8s" ]; then
+    echo "REFUSING: expected SM-G780F/r8s, got model=$model device=$device" >&2
+    return 5
+  fi
 }
 
 adb_cmd() {
   adb -s "$ANDROID_SERIAL" "$@"
+}
+
+adb_push_verified() {
+  local file=$1 remote=$2 expected=$3 uploaded
+  adb_cmd push "$file" "$remote" >/dev/null
+  uploaded=$(adb_cmd shell "sha256sum $remote" | awk '{print $1}')
+  if [ "$uploaded" != "$expected" ]; then
+    echo "ABORT: uploaded image hash mismatch; no partition written" >&2
+    return 6
+  fi
 }
 
 host_file_size() {
