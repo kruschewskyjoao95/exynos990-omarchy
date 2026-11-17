@@ -6,6 +6,7 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
 - (gemini livre para análise não conflitante de firmwares Wi-Fi/BT em `blobs/r8s-device/vendor/` — aguardando autorização explícita do proprietário para iniciar M2 no aparelho)
+- [claude] PR5 escrituração M1: marcar revisão de containers + corrigir nota Mesa/slim obsoleta. Arquivos: `roadmap/00-roadmap.md`, `COORDENACAO.md`
 
 ## A fazer
 
