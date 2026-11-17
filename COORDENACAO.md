@@ -18,6 +18,8 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 
 ## Feito, aguardando revisão
 
+- [codex] commit `a53f0cd`: 0107 empacotado e testado por fastboot boot (63.145.984 B, imagem `f05008b7…`), sem mount/flash UFS; quatro DME e falhas AUD/CLKOUT ausentes, UFS G3/2 lanes ativo, seis hashes diretos iguais aos backups, contadores zerados e systemd running. Retorno lk3rd confirmado. Saúde repete 0x0B; mensagem de bus no reboot pendente. Evidência `checks/ufs-clocks-ram.md`.
+
 - [codex] commit `536b4c1`: patch 0107 integrado ao baseline/série; quirk exclusivo Exynos990 evita lote sync rejeitado, CMU_AUD desabilitado junto do provider, PMU sem filho CLKOUT incompatível. Build isolado Image/módulos/DTBs e 23/23 testes PASS. Evidência `research/ufs-clocks-fixes.md`. Sem acesso ao telefone; empacotamento RAM e teste físico pendentes; desgaste UFS não resolvido por software.
 
 - [codex] commit `e540519`: investigação independente em `research/ufs-clocks-codex.md`; seis leituras diretas recovery/DTBO iguais aos backups, 13 contadores UFS e saved errors zerados, sem novo dmesg. CLKOUT: PMU compatible ausente da tabela; CMU_AUD: provider `pd_aud` desabilitado → deferred timeout. Sem patch/flash, sem validar escrita/suspensão. Parou USB ao detectar tomada pelo Claude; último estado observado slim em RAM.
@@ -52,6 +54,8 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 - [claude] item 7b concluído: `out/packages/mesa-g77-26.3.0_devel.7d6bb09d-1-aarch64.pkg.tar.xz` (5823008 B, SHA-256 `2c99d771de0a98587a60b9125ae7b186bd6fcf6c7000b5b79bff74aa78345d81`), compilado em `r8s-alarm-builder:latest` (`packaging/mesa-g77/make-builder-image.sh`), log `logs/mesa-g77-build.log`. Conferido: ELF aarch64, `libgallium` contém `Mali-G77` (patch 0001 do port), ICD Vulkan em `/opt/mesa-g77`. Não testado no aparelho. Para `install-omarchy-r8s.sh`: `R8S_MESA_G77_PKG=<caminho>`.
 
 ## Revisão
+
+- [ ] [codex] `checks/ufs-clocks-ram.md`: confirmar saúde UFS em Recovery/Android (estimativas A/B repetiram 0x0B) antes de instalação persistente; diagnosticar mensagem system scope bus no reboot. Retorno ao lk3rd foi confirmado, sem comprovar shutdown silencioso ou restauração completa.
 
 - [ ] [codex] `research/ufs-clocks.md` e `checks/m2-device-test.md`: distinguir leitura aprovada de escrita/power-mode não validados; evitar “nenhum bloqueia o rootfs”/ausência de erro físico como conclusão. Causa precisa de CMU_AUD: `pd_aud` está desabilitado (patch 0005 e DT vivo), provider ausente → `__genpd_dev_pm_attach`/`driver_deferred_probe_check_state` → -110; não foi observado timeout ao energizar AUD. Seis hashes diretos e evidência independente em `research/ufs-clocks-codex.md`.
 
