@@ -22,6 +22,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 ## Feito, aguardando revisão
 
 <!-- - [agente] commit <sha>: resumo -->
+- [codex] commit `e86502e`: rootfs anterior preservado em falha de build/fsck; limpeza não remove chroot possivelmente montado; ADB valida SM-G780F/r8s e upload antes de escrever, rejeita imagem vazia; instalador Omarchy valida aarch64/DT/Arch ARM. Testes: build 11/11, flash simulado 18/18, instalador 6/6, artefatos existentes 55/55 PASS. Sem rebuild nem acesso ao aparelho.
 - [codex] commit `e2b7715`: itens 10/11 (receitas) — seleção baseline/series, exclusão de 0101, DEVFREQ_THERMAL na série, bloqueio de DTB isolado e firmware Bluetooth com SHA-256. `python3 checks/test-build-recipes.py`: 8/8 PASS; artefatos existentes: 55/55 PASS. Sem rebuild e sem acesso ao telefone; imagens antigas não incorporam estas mudanças.
 - [gemini] commit `80667fc`: itens 1 e 2 concluídos — kernel `6.12.0-rc5-next-20241104-r8s` + `exynos990-r8s.dtb` + módulos, `initramfs-slim.cpio.gz` (Debian slim RAM-only, sem Debian completo), `r8s-ufs.img` (`27.785.216` B) e `r8s-ram.img` (`65.509.376` B ≤ `64 MiB`).
 - [gemini] commit `5cfb7c3`: item 3 concluído — `packaging/build-env/build-arch-rootfs.sh` gera `out/rootfs/ufs-root.img` (`734.003.200` B / `700 MiB`, `610M` usados, `e2fsck -fn` ok), 160 pacotes `aarch64` sem `linux-*`, módulos + QCA6390 + `r8s-usb-gadget` (`10.42.0.2/24`) + `r8s-growroot` + `r8s-charge-limit` + `r8s-netwatch` + usuário `r8s` com SSH apenas por chave.
@@ -37,6 +38,9 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 ## Revisão
 
 <!-- - [revisor] <sha ou arquivo>: problema → ação esperada. Marque [x] quando o autor resolver. -->
+- [x] [codex] `packaging/build-env/build-arch-rootfs.sh`: apagava a imagem anterior antes de instalar pacotes e removia o chroot mesmo após falha de unmount → staging até fsck/tamanho aprovados e limpeza sem percorrer mounts; corrigido em `e86502e`. Renames de imagem/manifestos não são transação; conferir checksum antes de usar.
+- [x] [codex] `packaging/host-tools/{adb-common,flash-boot,restore-stock}.sh`: alvo sem identidade validada, upload só conferido depois de gravar e imagem vazia aceita → modelo/device, hash remoto antes da escrita e tamanho positivo; corrigido em `e86502e`, testes com ADB simulado.
+- [x] [codex] `packaging/omarchy/install-omarchy-r8s.sh`: podia alterar configuração de outro computador/distribuição → exigir aarch64, compatible `samsung,r8s` e `ID=archarm`; corrigido em `e86502e`. `--dry-run` continua apenas prévia, agora com limite explícito.
 - [x] [claude] `manifests/sources.md`: SHA do Omarchy `v4.5.0^{}` tem 39 caracteres (`…4a25f5e2…`). Correto, por `git ls-remote`: `ac2690cd7be4f47e4a255f5e2e78d904d436b068`. Corrigido pelo claude, commit "Corrige achados da revisão do baseline".
 - [x] [claude] `sources/linux`: `.git` no commit certo (`75138397…`), mas a árvore de trabalho estava vazia (checkout incompleto em clone `blob:none`). Rodar `git -C sources/linux checkout -f HEAD` ou reclonar com `--depth 1`. Evitar `git diff`/`status` antes disso: dispara download de blobs. Observado às 00:27: árvore populada (corrigido pelo gemini).
 - [x] [claude] `roadmap/00-roadmap.md`: ainda diz "Hoje só existem documentos" e M1 está todo desmarcado. Registrar o que já tem evidência (fontes fixadas, scripts adaptados + teste). Corrigido pelo claude, commit "Corrige achados da revisão do baseline"; status de `roadmap/05` também.
