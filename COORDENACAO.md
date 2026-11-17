@@ -5,7 +5,6 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 ## Em andamento
 
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
-- [codex] Itens 10/11: corrigir seleção de patches e bloquear DTB isolado; integrar firmware BT verificado na receita Arch. Arquivos: `packaging/build-env/build-m1-kernel.sh`, `packaging/build-env/build-arch-rootfs.sh`, `packaging/kernel-patches/{README.md,series}`, `checks/test-build-recipes.py`, `manifests/bluetooth-firmware.sha256`, `roadmap/00-roadmap.md`, `COORDENACAO.md`. Sem rebuild ou escrita no aparelho.
 - (gemini livre para análise não conflitante de firmwares Wi-Fi/BT em `blobs/r8s-device/vendor/` — aguardando autorização explícita do proprietário para iniciar M2 no aparelho)
 
 ## A fazer
@@ -15,14 +14,15 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 7. [proprietário] Guardar cópia externa dos backups (`backups/`) e autorizar explicitamente o início de **M2** (`lk3rd` + `fastboot boot r8s-mini.img` / `r8s-ram.img` em RAM) após o ajuste de 6 GB.
 7. [gemini] (após autorização de M2) Executar `packaging/host-tools/m2-preflight.sh`, gravar `lk3rd`, testar `r8s-mini.img` / `r8s-ram.img` em RAM e registrar logs/resultados (V2–V3).
 9. [claude/gemini] (depois do teste em RAM do M2) DVFS da GPU: ACPM G3D = id 10 + tabela de 7 frequências, ver `roadmap/07` linha "Frequência variável da GPU". Primeiro só leitura de `get_rate(10)` no aparelho.
-10. [gemini] Integrar `packaging/kernel-patches/series` em `build-m1-kernel.sh`: aplicar na ordem, depois dos 24 do port; `scripts/config -e DEVFREQ_THERMAL`. Manter um modo só com port+`0100` para o primeiro teste em RAM (ver `packaging/kernel-patches/README.md`).
-11. [gemini] Rootfs Arch: instalar firmware Bluetooth `qca/htbtfw20.tlv` e `qca/htnv20.bin` (hoje não há nenhum `qca/`). Origem: `blobs/r8s-device/vendor/root/firmware/` ou linux-firmware; ver `research/wifi-bt-firmware.md`.
+10. [gemini] Receita corrigida em `e2b7715`; falta compilar a série completa (`R8S_KERNEL_PATCHSET=series`) e regenerar initramfs/rootfs/imagens com os mesmos módulos. Preservar antes o conjunto básico para o primeiro teste em RAM. Modo `dtbs` bloqueado.
+11. [gemini] Receita Bluetooth pronta em `e2b7715`; falta regenerar `ufs-root.img` e verificar os dois arquivos `qca/` na imagem. Firmware com hashes fixados; transporte/endereço HCI e funcionamento continuam pendentes de teste no aparelho.
 12. [claude] (no aparelho, depois do M2) testes por recurso, na ordem dos relatórios em `research/`: GPU DVFS só leitura, C2 na cpu7, timeouts I2C, BT com 115200/RTS, Wi-Fi com BDF próprio (exige `CONFIG_EXTRA_FIRMWARE` sem o `board-2.bin`), suspensão E1-E4, PWM antes do `0101`.
 8. [claude] Revisar logs/artefatos gerados em M2–M4 no aparelho real antes de avançar para M5.
 
 ## Feito, aguardando revisão
 
 <!-- - [agente] commit <sha>: resumo -->
+- [codex] commit `e2b7715`: itens 10/11 (receitas) — seleção baseline/series, exclusão de 0101, DEVFREQ_THERMAL na série, bloqueio de DTB isolado e firmware Bluetooth com SHA-256. `python3 checks/test-build-recipes.py`: 8/8 PASS; artefatos existentes: 55/55 PASS. Sem rebuild e sem acesso ao telefone; imagens antigas não incorporam estas mudanças.
 - [gemini] commit `80667fc`: itens 1 e 2 concluídos — kernel `6.12.0-rc5-next-20241104-r8s` + `exynos990-r8s.dtb` + módulos, `initramfs-slim.cpio.gz` (Debian slim RAM-only, sem Debian completo), `r8s-ufs.img` (`27.785.216` B) e `r8s-ram.img` (`65.509.376` B ≤ `64 MiB`).
 - [gemini] commit `5cfb7c3`: item 3 concluído — `packaging/build-env/build-arch-rootfs.sh` gera `out/rootfs/ufs-root.img` (`734.003.200` B / `700 MiB`, `610M` usados, `e2fsck -fn` ok), 160 pacotes `aarch64` sem `linux-*`, módulos + QCA6390 + `r8s-usb-gadget` (`10.42.0.2/24`) + `r8s-growroot` + `r8s-charge-limit` + `r8s-netwatch` + usuário `r8s` com SSH apenas por chave.
 - [gemini] commit `7e9cb19`: item 4 concluído — `packaging/omarchy/install-omarchy-r8s.sh` configura `[omarchy]` stable antes de `[core]`/`[extra]`, valida `omarchy-keyring` por SHA-256 + PGP, bloqueia `linux-*`/`limine*`/`mkinitcpio*`, instala Omarchy + `foot`/`firefox`/`squeekboard` e adiciona glue `r8s` (`AQ_DRM_DEVICES`, `PAN_MESA_DEBUG=noafbc`, `r8s-unbind-fbcon`, `r8s-thermal-trip`, `r8s-recovery-vt`, overrides Lua em `~/.config/hypr/`).
