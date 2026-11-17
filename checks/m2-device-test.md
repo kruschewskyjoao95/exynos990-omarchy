@@ -61,6 +61,8 @@ Evidência: `logs/m2-native-partition-map.log`; implementação em `sources/lk3r
 
 Bluetooth apresentou timeouts HCI `-110` e falha ao ler versão QCA. Também há avisos de CPU features/MPIDR, reguladores dummy, falha de `exynos-clkout`, timeout de `exynos990-cmu` e ausência de `regulatory.db`/`autofs4`. Os avisos não impediram esses boots; suas causas e impactos ainda precisam de avaliação. Não declarar estabilidade ou todos os drivers funcionais por `systemd=running`.
 
+**UFS/clocks (17/11/2026, coleta somente leitura em slim, sem flash/montagem):** dme-set recusado em `0x9540` (`PA_DBG_OV_TM`) e `0x321` (`RX_SYNC_MASK_LENGTH`) com link FAST G3 OK e leituras conferindo; `clkout` sem match (driver só 5410/5420/5433), `cmu_aud 18c00000` timeout no PD (fall gracefully), `Not disabling unused clocks` por `clk_ignore_unused` intencional. Origem no código e sysfs (órfãos, `ufs-core-clock` 166,5 MHz) registrados em `research/ufs-clocks.md` e `logs/m2-{clocks,ufs}-*.log`. Nenhum bloqueia o rootfs; sync mask não aplicada fica como pendência de power-mode.
+
 Solicitado `systemctl reboot` ao final do slim para voltar ao lk3rd. O resultado do retorno está em `logs/m2-slim-return-fastboot.log`. Não houve gravação de kernel no slot virtual, gravação de userdata nem instalação do Arch/Omarchy no aparelho. O slot boot permanece vazio; retorno normal ao LineageOS exige procedimento de restauração compatível com o mapa alterado. Recovery permaneceu preservado; a restauração completa ainda não foi ensaiada.
 
 V2 (console real em RAM, sem UFS montado) foi demonstrado com mini e slim. M2 completo permanece pendente: Arch mínimo, cinco boots, rede/toque reais, energia/temperatura e recuperação comprovada.

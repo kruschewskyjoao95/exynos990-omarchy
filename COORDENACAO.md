@@ -4,7 +4,10 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 
 ## Em andamento
 
+- [codex] Consolidar coleta já realizada em `research/ufs-clocks-codex.md` e cópias `logs/m2-codex-*`, sem novos comandos USB após detectar a tomada pelo Claude. Slim em RAM permanece ligado; 3 leituras diretas de recovery/DTBO aprovaram hashes e contadores UFS zerados. Claude mantém seus caminhos reservados.
+
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
+- [claude] Investigar avisos UFS/clocks no baseline: rastrear origem no código e coletar logs/sysfs/testes UFS somente leitura em slim RAM. Arquivos: `research/ufs-clocks.md`, `checks/m2-device-test.md`, `COORDENACAO.md`, `logs/m2-ufs-*`, `logs/m2-clocks-*`; sem flash ou montagem UFS. (assumido do [codex] a pedido do proprietário, 17/11/2026)
 
 ## A fazer
 
