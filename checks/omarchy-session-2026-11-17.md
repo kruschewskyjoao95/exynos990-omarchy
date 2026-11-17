@@ -25,6 +25,8 @@ Continuação de `checks/arch-install-2026-11-17.md`. Telefone em Arch persisten
 - Captura de eventos (`/dev/input/event0`): coordenadas na tela inteira (x 57–1016, y 38–2350) — sensor e mapeamento corretos. O que não respondia era o botão do menu no shell.
 - Causa parcial: faltava `socat` no telefone; sem ele, `omarchy-shell` (IPC do shell) falha antes do fallback `qs ipc`. Instalado via pacman; `omarchy-shell shell ping` responde `ok`.
 - Atalho criado em `~/.local/share/applications/omarchy-menu.desktop` ("Omarchy Menu", ícone `omarchy`): executa `omarchy-shell shell toggle omarchy.menu '{"menu":"root"}'`, o mesmo comando do botão. Aparece na grade de apps junto de Firefox/Foot. Teste de toggle via SSH: rc=0.
+- Correção pós-teste: `toggle` no atalho falhava na segunda abertura (ficava só no OSD "Launching"); trocado para `summon` (sempre abre) + `StartupNotify=false`. Summon duplo via SSH: rc=0 e layer `omarchy-menu` presente.
+- Item "About" do menu morria na hora: faltava o pacote `fastfetch` (`fastfetch: command not found` no terminal). Instalado via pacman; render do About conferido em pty (tela de Hardware/logo sai normalmente).
 
 ## Limites
 
