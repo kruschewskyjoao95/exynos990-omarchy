@@ -1,0 +1,417 @@
+From ac48d2549a6307f601528e2ad2ae292d665288e4 Mon Sep 17 00:00:00 2001
+From: r8s <r8s@localhost>
+Date: Tue, 17 Nov 2026 07:15:06 -0300
+Subject: [PATCH] r8s: GPU (G3D) clock over ACPM DVFS + opt-in panfrost devfreq
+
+CMU_G3D belongs to the ACPM firmware. The Samsung 4.19 kernel sets the GPU
+clock only via cal_dfs_set_rate(0x0B04000A) -> exynos_acpm_set_rate(10),
+in kHz, with no regulator call: ACPM applies the ASV voltage itself, as
+for the CPU clusters.
+
+Replace the 800 MHz fixed-clock stub with a clk provider (child of the
+ACPM node) that maps rates to ACPM DVFS id 10 on channel 5:
+- no ACPM traffic at probe; rate reads as 0 until something sets it;
+- set_rate is refused (-EPERM) unless booted with r8s_gpu_dvfs=1, and
+  refused (-EAGAIN) while pd_g3d reports off, as Samsung's driver does;
+- only the 7 levels Samsung uses (156..800 MHz) are accepted;
+- debugfs exynos990-g3d/status reads ACPM get_rate(10) on demand;
+  exynos990-g3d/set_khz exists only with r8s_gpu_dvfs=1.
+
+Add the OPP table (377 MHz as opp-suspend, mirroring Samsung's 9830
+wakeup-clock workaround), #cooling-cells and a gpu-thermal cooling map.
+panfrost devfreq stays off unless loaded with r8s_devfreq=1.
+
+Not tested on the device.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ arch/arm64/boot/dts/exynos/exynos990-r8s.dts |   8 +
+ arch/arm64/boot/dts/exynos/exynos990.dtsi    |  56 ++++-
+ drivers/clk/samsung/Kconfig                  |   9 +
+ drivers/clk/samsung/Makefile                 |   1 +
+ drivers/clk/samsung/clk-exynos990-acpm-g3d.c | 211 +++++++++++++++++++
+ drivers/gpu/drm/panfrost/panfrost_devfreq.c  |   8 +
+ 6 files changed, 285 insertions(+), 8 deletions(-)
+ create mode 100644 drivers/clk/samsung/clk-exynos990-acpm-g3d.c
+
+diff --git a/arch/arm64/boot/dts/exynos/exynos990-r8s.dts b/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
+index fb487910d713..1ba123c7bc77 100644
+--- a/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
++++ b/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
+@@ -570,6 +570,14 @@ gpu_crit: gpu-crit {
+ 					type = "critical";
+ 				};
+ 			};
++
++			/* Binds only when panfrost registers devfreq (r8s_devfreq=1). */
++			cooling-maps {
++				map0 {
++					trip = <&gpu_control>;
++					cooling-device = <&gpu THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
++				};
++			};
+ 		};
+ 
+ 		isp-thermal {
+diff --git a/arch/arm64/boot/dts/exynos/exynos990.dtsi b/arch/arm64/boot/dts/exynos/exynos990.dtsi
+index 47dbc4b0dc2d..71c812b8581a 100644
+--- a/arch/arm64/boot/dts/exynos/exynos990.dtsi
++++ b/arch/arm64/boot/dts/exynos/exynos990.dtsi
+@@ -332,6 +332,17 @@ vdd_wifi: buck4m {
+ 				};
+ 			};
+ 
++			/*
++			 * G3D clock: CMU_G3D belongs to the ACPM firmware (DVFS
++			 * id 10, Samsung g3d_cmu_cal_id = 0x0B04000A). Rate
++			 * changes need r8s_gpu_dvfs=1 on the cmdline.
++			 */
++			gpu_clk: g3d-clock {
++				compatible = "samsung,exynos990-acpm-g3d-clk";
++				#clock-cells = <0>;
++				samsung,power-domain = <&pd_g3d>;
++			};
++
+ 			acpm_tmu: tmu {
+ 				compatible = "samsung,exynos990-acpm-tmu";
+ 				acpm-ipc-channel = <9>;
+@@ -340,17 +351,43 @@ acpm_tmu: tmu {
+ 		};
+ 	};
+ 
++	/*
++	 * The levels the Samsung kernel uses on this SoC (mali gpu_dvfs_table,
++	 * gpu_max_clock = 800 MHz; ECT also lists 832/897 MHz, left out).
++	 * No opp-microvolt: ACPM applies the ASV voltage with each rate.
++	 * opp-suspend mirrors Samsung's 9830 workaround (gpexwa_wakeup_clock):
++	 * drop to 377 MHz before the G3D domain powers off.
++	 */
++	gpu_opp_table: opp-table-gpu {
++		compatible = "operating-points-v2";
++
++		opp-156000000 {
++			opp-hz = /bits/ 64 <156000000>;
++		};
++		opp-260000000 {
++			opp-hz = /bits/ 64 <260000000>;
++		};
++		opp-377000000 {
++			opp-hz = /bits/ 64 <377000000>;
++			opp-suspend;
++		};
++		opp-455000000 {
++			opp-hz = /bits/ 64 <455000000>;
++		};
++		opp-572000000 {
++			opp-hz = /bits/ 64 <572000000>;
++		};
++		opp-702000000 {
++			opp-hz = /bits/ 64 <702000000>;
++		};
++		opp-800000000 {
++			opp-hz = /bits/ 64 <800000000>;
++		};
++	};
++
+ 	/* Touch (S6SY761) helpers: the PERIC1 sub-CMU isn't modelled, so stub
+ 	 * the HSI2C clock; the two rails are real S2MPS19 LDOs (enabled via ACPM),
+ 	 * the fixed-regulators just satisfy the driver's vdd/avdd bulk-get. */
+-	/* CMU_G3D isn't modelled; stub the GPU clock like the touch one. */
+-	gpu_clk: gpu-clock {
+-		compatible = "fixed-clock";
+-		#clock-cells = <0>;
+-		clock-frequency = <800000000>;
+-		clock-output-names = "gpu_clk";
+-	};
+-
+ 	tsp_i2c_clk: tsp-i2c-clock {
+ 		compatible = "fixed-clock";
+ 		#clock-cells = <0>;
+@@ -912,6 +949,9 @@ gpu: gpu@18500000 {
+ 			clocks = <&gpu_clk>;
+ 			clock-names = "core";
+ 			power-domains = <&pd_g3d>;
++			/* Used only with panfrost.r8s_devfreq=1. */
++			operating-points-v2 = <&gpu_opp_table>;
++			#cooling-cells = <2>;
+ 			/* The G3D block is IO-coherent through the CCI. Without this,
+ 			 * panfrost maps buffers write-combine while the kernel keeps a
+ 			 * cacheable alias of the same pages, and jobs submitted from the
+diff --git a/drivers/clk/samsung/Kconfig b/drivers/clk/samsung/Kconfig
+index 76a494e95027..fca8366f9c00 100644
+--- a/drivers/clk/samsung/Kconfig
++++ b/drivers/clk/samsung/Kconfig
+@@ -14,6 +14,15 @@ config COMMON_CLK_SAMSUNG
+ 	select EXYNOS_ARM64_COMMON_CLK if ARM64 && ARCH_EXYNOS
+ 	select TESLA_FSD_COMMON_CLK if ARM64 && ARCH_TESLA_FSD
+ 
++config EXYNOS990_ACPM_G3D_CLK
++	bool "Exynos 990 GPU (G3D) clock over ACPM DVFS"
++	depends on EXYNOS_ARM64_COMMON_CLK && EXYNOS_ACPM_PROTOCOL=y
++	default y
++	help
++	  Exposes the Exynos 990 G3D (Mali) clock, which the ACPM firmware
++	  owns, so panfrost can scale it. Rate changes are refused unless the
++	  kernel is booted with r8s_gpu_dvfs=1.
++
+ config S3C64XX_COMMON_CLK
+ 	bool "Samsung S3C64xx clock controller support" if COMPILE_TEST
+ 	depends on COMMON_CLK_SAMSUNG
+diff --git a/drivers/clk/samsung/Makefile b/drivers/clk/samsung/Makefile
+index 90e5b114872c..112ff5395914 100644
+--- a/drivers/clk/samsung/Makefile
++++ b/drivers/clk/samsung/Makefile
+@@ -22,6 +22,7 @@ obj-$(CONFIG_EXYNOS_ARM64_COMMON_CLK)	+= clk-exynos7885.o
+ obj-$(CONFIG_EXYNOS_ARM64_COMMON_CLK)	+= clk-exynos850.o
+ obj-$(CONFIG_EXYNOS_ARM64_COMMON_CLK)	+= clk-exynos8895.o
+ obj-$(CONFIG_EXYNOS_ARM64_COMMON_CLK)	+= clk-exynos990.o
++obj-$(CONFIG_EXYNOS990_ACPM_G3D_CLK)	+= clk-exynos990-acpm-g3d.o
+ obj-$(CONFIG_EXYNOS_ARM64_COMMON_CLK)	+= clk-exynosautov9.o
+ obj-$(CONFIG_EXYNOS_ARM64_COMMON_CLK)	+= clk-exynosautov920.o
+ obj-$(CONFIG_EXYNOS_ARM64_COMMON_CLK)	+= clk-gs101.o
+diff --git a/drivers/clk/samsung/clk-exynos990-acpm-g3d.c b/drivers/clk/samsung/clk-exynos990-acpm-g3d.c
+new file mode 100644
+index 000000000000..756daf147800
+--- /dev/null
++++ b/drivers/clk/samsung/clk-exynos990-acpm-g3d.c
+@@ -0,0 +1,211 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Exynos 990 GPU (G3D) clock over the ACPM DVFS channel (r8s).
++ *
++ * CMU_G3D is owned by the ACPM firmware: the Samsung kernel sets the GPU
++ * clock only through cal_dfs_set_rate(0x0B04000A), i.e. ACPM vclk index 10
++ * (acpm_dvfs_exynos9830.h: MIF=0 ... CP=9, G3D=10), and never touches a
++ * regulator for it - ACPM applies the ASV voltage itself, as it does for the
++ * CPU clusters (drivers/cpufreq/exynos990-cpufreq.c).
++ *
++ * Safety: nothing here talks to ACPM at probe. clk_set_rate() is refused
++ * unless the kernel was booted with r8s_gpu_dvfs=1, and is also refused while
++ * the G3D power domain is off (the Samsung driver never sets the GPU clock in
++ * that state). debugfs exynos990-g3d/status reads ACPM get_rate(10) on demand,
++ * only while the domain is on;
++ * exynos990-g3d/set_khz only exists with r8s_gpu_dvfs=1.
++ */
++#include <linux/clk.h>
++#include <linux/clk-provider.h>
++#include <linux/debugfs.h>
++#include <linux/firmware/samsung/exynos-acpm-protocol.h>
++#include <linux/io.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/of_address.h>
++#include <linux/platform_device.h>
++#include <linux/seq_file.h>
++#include <linux/units.h>
++
++#define ACPM_DVFS_CHANNEL	5	/* same channel as exynos990-cpufreq */
++#define ACPM_DVFS_ID_G3D	10	/* Samsung DT g3d_cmu_cal_id = 0x0B04000A */
++#define PD_STATUS		0x4	/* pd_g3d status, bit 0 = on (exynos990_cfg) */
++
++static bool r8s_gpu_dvfs;
++core_param(r8s_gpu_dvfs, r8s_gpu_dvfs, bool, 0444);
++
++/* Levels the Samsung GPU driver uses on this unit (gpu_dvfs_table, max 800 MHz). */
++static const unsigned int g3d_khz[] = {
++	156000, 260000, 377000, 455000, 572000, 702000, 800000
++};
++
++struct g3d_clk {
++	struct clk_hw hw;
++	struct acpm_handle *acpm;
++	void __iomem *pd;
++	unsigned long cur_hz;	/* last rate ACPM accepted, else the old stub's 800 MHz */
++};
++
++#define to_g3d(_hw) container_of(_hw, struct g3d_clk, hw)
++
++static bool g3d_powered(struct g3d_clk *g3d)
++{
++	return g3d->pd && (readl_relaxed(g3d->pd + PD_STATUS) & 0x1);
++}
++
++static unsigned long g3d_recalc_rate(struct clk_hw *hw, unsigned long parent)
++{
++	return to_g3d(hw)->cur_hz;
++}
++
++/* Highest table level not above the request (never rounds up). */
++static int g3d_determine_rate(struct clk_hw *hw, struct clk_rate_request *req)
++{
++	int i;
++
++	for (i = ARRAY_SIZE(g3d_khz) - 1; i > 0; i--)
++		if ((unsigned long)g3d_khz[i] * HZ_PER_KHZ <= req->rate)
++			break;
++	req->rate = (unsigned long)g3d_khz[i] * HZ_PER_KHZ;
++	return 0;
++}
++
++static int g3d_set_rate(struct clk_hw *hw, unsigned long rate,
++			unsigned long parent)
++{
++	struct g3d_clk *g3d = to_g3d(hw);
++	int ret;
++
++	if (!r8s_gpu_dvfs) {
++		pr_warn_once("exynos990-g3d: DVFS off, boot with r8s_gpu_dvfs=1\n");
++		return -EPERM;
++	}
++	if (!g3d->acpm)
++		return -ENODEV;
++	if (!g3d_powered(g3d))
++		return -EAGAIN;
++
++	ret = g3d->acpm->ops->dvfs.set_rate(g3d->acpm, ACPM_DVFS_CHANNEL,
++					    ACPM_DVFS_ID_G3D, rate);
++	if (ret)
++		pr_warn_ratelimited("exynos990-g3d: %lu -> %lu kHz failed: %d\n",
++				    g3d->cur_hz / HZ_PER_KHZ, rate / HZ_PER_KHZ, ret);
++	else
++		g3d->cur_hz = rate;
++	return ret;
++}
++
++static const struct clk_ops g3d_clk_ops = {
++	.recalc_rate	= g3d_recalc_rate,
++	.determine_rate	= g3d_determine_rate,
++	.set_rate	= g3d_set_rate,
++};
++
++static int g3d_status_show(struct seq_file *s, void *unused)
++{
++	struct g3d_clk *g3d = s->private;
++	bool on = g3d_powered(g3d), in_table = false;
++	unsigned long khz;
++	int i;
++
++	seq_printf(s, "pd_g3d: %s\n", on ? "on" : "off");
++	seq_printf(s, "r8s_gpu_dvfs: %d\n", r8s_gpu_dvfs);
++	seq_printf(s, "last_set_khz: %lu\n", g3d->cur_hz / HZ_PER_KHZ);
++	/* Samsung only queries the G3D clock while the domain is on; so do we. */
++	if (!on || !g3d->acpm) {
++		seq_puts(s, "acpm_khz: skipped (pd_g3d off or no ACPM)\n");
++		return 0;
++	}
++	khz = g3d->acpm->ops->dvfs.get_rate(g3d->acpm, ACPM_DVFS_CHANNEL,
++					    ACPM_DVFS_ID_G3D) / HZ_PER_KHZ;
++	for (i = 0; i < ARRAY_SIZE(g3d_khz); i++)
++		in_table |= khz == g3d_khz[i];
++	seq_printf(s, "acpm_khz: %lu%s\n", khz, in_table ? "" : " (not a table level)");
++	return 0;
++}
++DEFINE_SHOW_ATTRIBUTE(g3d_status);
++
++/* Goes through the clk core, so the table check and the power check apply. */
++static int g3d_set_khz(void *data, u64 val)
++{
++	struct g3d_clk *g3d = data;
++	int i;
++
++	for (i = 0; i < ARRAY_SIZE(g3d_khz); i++)
++		if (val == g3d_khz[i])
++			return clk_set_rate(g3d->hw.clk, val * HZ_PER_KHZ);
++	return -EINVAL;
++}
++DEFINE_DEBUGFS_ATTRIBUTE(g3d_set_khz_fops, NULL, g3d_set_khz, "%llu\n");
++
++static int g3d_clk_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct device_node *np;
++	struct resource res;
++	struct g3d_clk *g3d;
++	struct dentry *dir;
++	int ret;
++
++	g3d = devm_kzalloc(dev, sizeof(*g3d), GFP_KERNEL);
++	if (!g3d)
++		return -ENOMEM;
++
++	np = of_get_parent(dev->of_node);
++	g3d->acpm = devm_acpm_get_by_node(dev, np);
++	of_node_put(np);
++	/* Never leave panfrost without a clock: fall back to a fixed one. */
++	if (IS_ERR(g3d->acpm)) {
++		if (PTR_ERR(g3d->acpm) == -EPROBE_DEFER)
++			return -EPROBE_DEFER;
++		dev_warn(dev, "no ACPM handle (%pe), G3D clock fixed\n", g3d->acpm);
++		g3d->acpm = NULL;
++	}
++	g3d->cur_hz = 800 * HZ_PER_MHZ;
++
++	/*
++	 * Read-only peek at the pd_g3d status register. The pd driver owns the
++	 * region, so map it without requesting it.
++	 */
++	np = of_parse_phandle(dev->of_node, "samsung,power-domain", 0);
++	ret = np ? of_address_to_resource(np, 0, &res) : -ENODEV;
++	of_node_put(np);
++	if (ret)
++		dev_warn(dev, "no samsung,power-domain (%d), rate changes off\n", ret);
++	else
++		g3d->pd = devm_ioremap(dev, res.start, resource_size(&res));
++
++	g3d->hw.init = CLK_HW_INIT_NO_PARENT("g3d_acpm", &g3d_clk_ops,
++					     CLK_GET_RATE_NOCACHE);
++	ret = devm_clk_hw_register(dev, &g3d->hw);
++	if (ret)
++		return ret;
++	ret = devm_of_clk_add_hw_provider(dev, of_clk_hw_simple_get, &g3d->hw);
++	if (ret)
++		return ret;
++
++	dir = debugfs_create_dir("exynos990-g3d", NULL);
++	debugfs_create_file("status", 0444, dir, g3d, &g3d_status_fops);
++	if (r8s_gpu_dvfs)
++		debugfs_create_file_unsafe("set_khz", 0200, dir, g3d,
++					   &g3d_set_khz_fops);
++
++	dev_info(dev, "G3D clock via ACPM id %d, DVFS %s\n", ACPM_DVFS_ID_G3D,
++		 r8s_gpu_dvfs ? "ENABLED (r8s_gpu_dvfs=1)" : "off");
++	return 0;
++}
++
++static const struct of_device_id g3d_clk_of_match[] = {
++	{ .compatible = "samsung,exynos990-acpm-g3d-clk" },
++	{ }
++};
++
++static struct platform_driver g3d_clk_driver = {
++	.probe	= g3d_clk_probe,
++	.driver	= {
++		.name = "exynos990-acpm-g3d-clk",
++		.of_match_table = g3d_clk_of_match,
++		.suppress_bind_attrs = true,	/* debugfs dir is never removed */
++	},
++};
++builtin_platform_driver(g3d_clk_driver);
+diff --git a/drivers/gpu/drm/panfrost/panfrost_devfreq.c b/drivers/gpu/drm/panfrost/panfrost_devfreq.c
+index 2d30da38c2c3..509f7c7b8219 100644
+--- a/drivers/gpu/drm/panfrost/panfrost_devfreq.c
++++ b/drivers/gpu/drm/panfrost/panfrost_devfreq.c
+@@ -11,6 +11,10 @@
+ #include "panfrost_device.h"
+ #include "panfrost_devfreq.h"
+ 
++static bool r8s_devfreq;
++module_param(r8s_devfreq, bool, 0444);
++MODULE_PARM_DESC(r8s_devfreq, "Enable devfreq (needs r8s_gpu_dvfs=1 on the kernel cmdline)");
++
+ static void panfrost_devfreq_update_utilization(struct panfrost_devfreq *pfdevfreq)
+ {
+ 	ktime_t now, last;
+@@ -125,6 +129,10 @@ int panfrost_devfreq_init(struct panfrost_device *pfdev)
+ 	struct panfrost_devfreq *pfdevfreq = &pfdev->pfdevfreq;
+ 	unsigned long freq = ULONG_MAX;
+ 
++	/* r8s: G3D DVFS is unvalidated on hardware, keep the boot clock by default. */
++	if (!r8s_devfreq)
++		return 0;
++
+ 	if (pfdev->comp->num_supplies > 1) {
+ 		/*
+ 		 * GPUs with more than 1 supply require platform-specific handling:
+-- 
+2.56.1
+
