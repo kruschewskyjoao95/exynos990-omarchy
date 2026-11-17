@@ -5,7 +5,7 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 ## Em andamento
 
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
-- [claude] item 7b (pedido do proprietário: GPU é obrigatória): imagem Docker aarch64 de build + compilar `mesa-g77`. Arquivos: `packaging/mesa-g77/make-builder-image.sh` (novo), `out/build/`, `out/packages/`, `logs/mesa-g77-build.log`
+- [codex] Itens 10/11: corrigir seleção de patches e bloquear DTB isolado; integrar firmware BT verificado na receita Arch. Arquivos: `packaging/build-env/build-m1-kernel.sh`, `packaging/build-env/build-arch-rootfs.sh`, `packaging/kernel-patches/{README.md,series}`, `checks/test-build-recipes.py`, `manifests/bluetooth-firmware.sha256`, `roadmap/00-roadmap.md`, `COORDENACAO.md`. Sem rebuild ou escrita no aparelho.
 - (gemini livre para análise não conflitante de firmwares Wi-Fi/BT em `blobs/r8s-device/vendor/` — aguardando autorização explícita do proprietário para iniciar M2 no aparelho)
 
 ## A fazer
@@ -14,7 +14,6 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 
 7. [proprietário] Guardar cópia externa dos backups (`backups/`) e autorizar explicitamente o início de **M2** (`lk3rd` + `fastboot boot r8s-mini.img` / `r8s-ram.img` em RAM) após o ajuste de 6 GB.
 7. [gemini] (após autorização de M2) Executar `packaging/host-tools/m2-preflight.sh`, gravar `lk3rd`, testar `r8s-mini.img` / `r8s-ram.img` em RAM e registrar logs/resultados (V2–V3).
-7b. [gemini] Compilar o pacote `packaging/mesa-g77/` (nenhum `.pkg.tar.*` existe em 17/11/2026 06:20). Sem ele, `install-omarchy-r8s.sh` aborta ou roda sem GPU (`--allow-stock-mesa`). Pode ser feito no computador antes de M2; não precisa do aparelho.
 9. [claude/gemini] (depois do teste em RAM do M2) DVFS da GPU: ACPM G3D = id 10 + tabela de 7 frequências, ver `roadmap/07` linha "Frequência variável da GPU". Primeiro só leitura de `get_rate(10)` no aparelho.
 10. [gemini] Integrar `packaging/kernel-patches/series` em `build-m1-kernel.sh`: aplicar na ordem, depois dos 24 do port; `scripts/config -e DEVFREQ_THERMAL`. Manter um modo só com port+`0100` para o primeiro teste em RAM (ver `packaging/kernel-patches/README.md`).
 11. [gemini] Rootfs Arch: instalar firmware Bluetooth `qca/htbtfw20.tlv` e `qca/htnv20.bin` (hoje não há nenhum `qca/`). Origem: `blobs/r8s-device/vendor/root/firmware/` ou linux-firmware; ver `research/wifi-bt-firmware.md`.
@@ -32,6 +31,8 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 - [gemini] commit `254670b`: item 6 concluído — `packaging/kernel-patches/0100-arm64-dts-exynos990-r8s-6gb-memory-map.patch` ajusta o banco alto de `memory@80000000` para `<0x8 0x80000000 0x0 0xfec00000>` (`0x9_7ec00000`, 20 MiB abaixo de `0x9_80000000`, deixando `el2_earlymem` `0x9_7ee00000..0x9_80000000` fora do mapa linear e mantendo a exclusão `s2mpu-table` em `0xc1b00000` de `0024`), `build-m1-kernel.sh` passa a aplicar `packaging/kernel-patches/*.patch` e ganha modo `dtbs`, e `exynos990-r8s.dtb` + `r8s-{ufs,ram,mini}.img` foram recompilados e verificados (`verify-m1-m4-artifacts.sh` **55/55 PASS**, `m2-preflight.sh --strict-backups` **32 PASS / 1 WARN / 0 FAIL**).
 
 - [claude] commits `dfb0462`..`299b284`: patches extras `0101`-`0105` (subagentes, revisados pelo claude; `0102` corrigido para nunca deixar o Panfrost sem clock) e relatórios em `research/`. `series` = 0100, 0102-0105; aplicam em sequência sobre `r8s-port-base`. Kernel completo com a series: **ainda não validado** (build interrompido a pedido do proprietário em 17/11/2026 07:34; refazer em `out/agents/integ`, que já tem os patches aplicados).
+
+- [claude] item 7b concluído: `out/packages/mesa-g77-26.3.0_devel.7d6bb09d-1-aarch64.pkg.tar.xz` (5823008 B, SHA-256 `2c99d771de0a98587a60b9125ae7b186bd6fcf6c7000b5b79bff74aa78345d81`), compilado em `r8s-alarm-builder:latest` (`packaging/mesa-g77/make-builder-image.sh`), log `logs/mesa-g77-build.log`. Conferido: ELF aarch64, `libgallium` contém `Mali-G77` (patch 0001 do port), ICD Vulkan em `/opt/mesa-g77`. Não testado no aparelho. Para `install-omarchy-r8s.sh`: `R8S_MESA_G77_PKG=<caminho>`.
 
 ## Revisão
 
