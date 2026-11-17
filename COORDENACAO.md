@@ -5,14 +5,12 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 ## Em andamento
 
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
-- (gemini livre para análise não conflitante de firmwares Wi-Fi/BT em `blobs/r8s-device/vendor/` — aguardando autorização explícita do proprietário para iniciar M2 no aparelho)
 
 ## A fazer
 
 Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/00](roadmap/00-roadmap.md#ordem-de-execução-e-entregas).
 
-7. [proprietário] Guardar cópia externa dos backups (`backups/`) e autorizar explicitamente o início de **M2** (`lk3rd` + `fastboot boot r8s-mini.img` / `r8s-ram.img` em RAM) após o ajuste de 6 GB.
-7. [gemini] (após autorização de M2) Executar `packaging/host-tools/m2-preflight.sh`, gravar `lk3rd`, testar `r8s-mini.img` / `r8s-ram.img` em RAM e registrar logs/resultados (V2–V3).
+7. [claude/gemini] Revisar resultados físicos em `checks/m2-device-test.md` antes de instalar rootfs: avisos UFS/clocks, Bluetooth -110, toque real/DRM e procedimento de retorno com a GPT alterada. **lk3rd já instalado; não repetir a gravação inicial pelo mapa antigo.** `sda13=lk3rd/2 MiB`, `sda33=boot/57 MiB`, `sda32=userdata`. Nenhum rootfs gravado.
 9. [claude/gemini] (depois do teste em RAM do M2) DVFS da GPU: ACPM G3D = id 10 + tabela de 7 frequências, ver `roadmap/07` linha "Frequência variável da GPU". Primeiro só leitura de `get_rate(10)` no aparelho.
 12. [claude] (no aparelho, depois do M2) testes por recurso, na ordem dos relatórios em `research/`: GPU DVFS só leitura, C2 na cpu7, timeouts I2C, BT com 115200/RTS, Wi-Fi com BDF próprio (exige `CONFIG_EXTRA_FIRMWARE` sem o `board-2.bin`), suspensão E1-E4, PWM antes do `0101`.
 8. [claude] Revisar logs/artefatos gerados em M2–M4 no aparelho real antes de avançar para M5.
@@ -20,6 +18,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 ## Feito, aguardando revisão
 
 <!-- - [agente] commit <sha>: resumo -->
+- [codex] commits `39204cc`, `c376fde`: backup externo no HD Dados (23 arquivos/400.893.292 B, todos os hashes iguais; manifesto 10/10 OK); Recovery root/modelo/bateria 100% conferidos. lk3rd instalado com readback aprovado; fastboot confirmado; mini e slim iniciaram kernel AArch64 nativo, sem UFS montada. Slim: systemd running/0 failed, touchscreen e DRM enumerados. Retorno ao lk3rd confirmado após ambos. Logs/evidência copiados e verificados no HD. **Sem instalação Arch/Omarchy; V3–V9 pendentes.** Ver `checks/m2-device-test.md` (avisos e novo mapa GPT).
 - [codex] commit `e28e769`: corrige PR6 — Heimdall recebe `lk3rd-r8s.img`, TAR reservado ao Odin, PIT/autorização antes da escrita; referências do roadmap e nota obsoleta do manifesto corrigidas. Testes: runbook 5/5 e kernel-sets 3/3; TAR/LZ4 rejeitados no comando e payload descomprimido igual ao IMG byte a byte. Sem aparelho/flash.
 - [claude] commit `de7cc81`: PR6 correção de roteiro e manifesto (empilhado no PR5) — backup-verify via `backup-manifest.sha256`, Heimdall `--BOOT`/`boot.img.lz4` definido, `m1-artifacts.md` com baseline atual. Regressão: build 17/17, instalador 10/10, artefatos 56/56.
 - [claude] commit `1c82566`: PR5 escrituração M1 (empilhado no PR4) — item de containers/loop marcado com evidência; nota Mesa `-2` corrigida. Regressão: runbook 2/2, kernel-sets 3/3, build 17/17, artefatos 56/56.
@@ -49,6 +48,8 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 ## Revisão
 
 <!-- - [revisor] <sha ou arquivo>: problema → ação esperada. Marque [x] quando o autor resolver. -->
+- [ ] [codex] Teste físico `c376fde`: Bluetooth falha com HCI -110; UFS emite avisos dme-set; CPU/clocks/reguladores têm avisos. Coletar diagnóstico dirigido antes de validar escrita UFS/carga/energia. `systemd=running` e enumeração DRM não comprovam aceleração gráfica nem estabilidade.
+- [ ] [codex] GPT alterada pelo próprio lk3rd (`automatic_repartitioning.c`): antiga BOOT de 59 MiB virou lk3rd de 2 MiB + boot de 57 MiB. Revisar restauração pelo mapa atual; não passar backup antigo de 59 MiB para a nova boot de 57 MiB, nem usar `sda13` como boot Linux. Recovery preservado; retorno completo ao LineageOS ainda não ensaiado.
 - [x] [codex] `de7cc81`, `manifests/m2-runbook.md`: comando passava TAR Odin como conteúdo BOOT no Heimdall; teste só buscava palavras → imagem crua + teste do comando e equivalência do payload, corrigidos em `e28e769`. Transporte no telefone permanece pendente.
 - [ ] [claude] revisão de `019c589..faa2c16` (17/11/2026): aprovada. Reproduzido no computador: build 17/17, instalador 10/10, flash simulado 18/18, artefatos 56/56; Mesa `-2` com SHA `4a62c5a3…`, `depend = spirv-tools` e `NEEDED libSPIRV-Tools.so`; `r8s-ram.img` 65.513.472 B. Conferido no Omarchy do host: o hook `omarchy-update-pacman-guard` aceita `OMARCHY_ALLOW_DIRECT_PACMAN=1`, `omarchy-system-lock` existe e não bloqueia, e `/etc/os-release` não pertence a pacote (`/usr/lib/os-release` vem de `filesystem`). Pendente: `adb_require_single_root_device` exige `ro.product.model=SM-G780F` e `ro.product.device=r8s`, valores não lidos no LineageOS Recovery. Se forem outros, `flash-boot.sh`/`restore-stock.sh` recusam (falha segura). Ação: ler `getprop` no recovery antes de depender desses scripts.
 - [x] [codex] `packaging/build-env/build-arch-rootfs.sh`: apagava a imagem anterior antes de instalar pacotes e removia o chroot mesmo após falha de unmount → staging até fsck/tamanho aprovados e limpeza sem percorrer mounts; corrigido em `e86502e`. Renames de imagem/manifestos não são transação; conferir checksum antes de usar.
@@ -70,5 +71,5 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 - [x] 17/11/2026: sem rootfs Debian completo. Teste em RAM com initramfs slim → Arch ARM mínimo gravado → Omarchy via `pacman`. Ver `roadmap/00`.
 - [x] 17/11/2026: LineageOS 24.0 foi instalado pelo proprietário com ajuda do Gemini.
 
-- [x] 17/11/2026: backup de `efs`, `sec_efs`, `cpefs`, `param`, `persistent`, `dtbo`, `boot` e `recovery` feito pelo claude via adb root do LineageOS Recovery, só leitura; hash e tamanho de cada imagem iguais ao aparelho. Em `backups/` (fora do git, somente leitura), hashes em `backups/stock-backup-verify.txt`. Falta o proprietário guardar uma cópia fora do computador.
+- [x] 17/11/2026: backups anteriores de partições preservados em `backups/`; cópia externa concluída pelo codex no HD USB Dados, com hashes verificados, em `39204cc`. Proprietário confirmou ausência de dados pessoais e autorizou prosseguir com o teste conectado. Evidência: `checks/m0-external-backup.md`.
 - Escrita no telefone segue a regra 5 de [AGENTS.md](AGENTS.md#trabalho-com-mais-de-um-agente).
