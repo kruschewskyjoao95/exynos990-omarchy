@@ -6,6 +6,7 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
 - [claude] item 7b (pedido do proprietário: GPU é obrigatória): imagem Docker aarch64 de build + compilar `mesa-g77`. Arquivos: `packaging/mesa-g77/make-builder-image.sh` (novo), `out/build/`, `out/packages/`, `logs/mesa-g77-build.log`
+- [claude + subagentes] drivers extras do kernel (pedido do proprietário, 17/11/2026): cada recurso vira um patch em `packaging/kernel-patches/01NN-*.patch`, aplicado depois dos 24 do port, escrito e compilado no computador; teste só depois do M2. Arquivos: `packaging/kernel-patches/` (novo), `research/` (novo), `out/agents/` (worktrees do kernel). Não toca `packaging/build-env/` nem o DTS de memória (item 6 do gemini). Reservado: `0100-*` para a correção de 6 GB do gemini.
 - (livre; preparo de M1 e receitas M4 concluídos no computador — aguardando decisão sobre `efs`/`sec_efs` e ordem explícita do proprietário para iniciar M2 no aparelho)
 
 ## A fazer
