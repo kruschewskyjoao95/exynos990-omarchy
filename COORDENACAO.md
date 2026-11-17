@@ -5,19 +5,20 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 ## Em andamento
 
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
-- [gemini] item 3: builder do rootfs Arch ARM mínimo (`ufs-root.img` ≤ 700 MiB). Arquivos: `packaging/build-env/build-arch-rootfs.sh`, `packaging/rootfs-glue/`, `out/rootfs/`, `logs/`
+- (livre; aguardando revisão do item 5 por `[claude]` e autorização do proprietário antes de qualquer escrita em M2)
 
 ## A fazer
 
 Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/00](roadmap/00-roadmap.md#ordem-de-execução-e-entregas).
 
-4. [gemini] Receita de instalação do Omarchy pós-boot (`[omarchy]` stable + `omarchy-keyring`, conforme `manifests/packages-aarch64.md`), sem rodar o instalador de PC (disco/ISO/bootloader).
 5. [claude] Revisar 3 e 4 contra `sources/port/tools/build-rootfs.sh` e `build-ufs-image.sh` (serviços r8s que precisam existir no Arch).
 
 ## Feito, aguardando revisão
 
 <!-- - [agente] commit <sha>: resumo -->
 - [gemini] commit `80667fc`: itens 1 e 2 concluídos — kernel `6.12.0-rc5-next-20241104-r8s` + `exynos990-r8s.dtb` + módulos, `initramfs-slim.cpio.gz` (Debian slim RAM-only, sem Debian completo), `r8s-ufs.img` (`27.785.216` B) e `r8s-ram.img` (`65.509.376` B ≤ `64 MiB`).
+- [gemini] commit `5cfb7c3`: item 3 concluído — `packaging/build-env/build-arch-rootfs.sh` gera `out/rootfs/ufs-root.img` (`734.003.200` B / `700 MiB`, `610M` usados, `e2fsck -fn` ok), 160 pacotes `aarch64` sem `linux-*`, módulos + QCA6390 + `r8s-usb-gadget` (`10.42.0.2/24`) + `r8s-growroot` + `r8s-charge-limit` + `r8s-netwatch` + usuário `r8s` com SSH apenas por chave.
+- [gemini] commit `7e9cb19`: item 4 concluído — `packaging/omarchy/install-omarchy-r8s.sh` configura `[omarchy]` stable antes de `[core]`/`[extra]`, valida `omarchy-keyring` por SHA-256 + PGP, bloqueia `linux-*`/`limine*`/`mkinitcpio*`, instala Omarchy + `foot`/`firefox`/`squeekboard` e adiciona glue `r8s` (`AQ_DRM_DEVICES`, `PAN_MESA_DEBUG=noafbc`, `r8s-unbind-fbcon`, `r8s-thermal-trip`, `r8s-recovery-vt`, overrides Lua em `~/.config/hypr/`).
 
 ## Revisão
 
