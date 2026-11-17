@@ -20,6 +20,12 @@ Continuação de `checks/arch-install-2026-11-17.md`. Telefone em Arch persisten
 - `hyprctl monitors`: `DSI-1 1080x2400@60`, escala 2, focado, dpms on.
 - Ambiente da sessão usa `/opt/mesa-g77` (`LD_LIBRARY_PATH`, EGL vendor, `PAN_MESA_DEBUG=noafbc`, ICD Panfrost) — renderer de hardware, não llvmpipe.
 
+## Toque e atalho do menu
+
+- Captura de eventos (`/dev/input/event0`): coordenadas na tela inteira (x 57–1016, y 38–2350) — sensor e mapeamento corretos. O que não respondia era o botão do menu no shell.
+- Causa parcial: faltava `socat` no telefone; sem ele, `omarchy-shell` (IPC do shell) falha antes do fallback `qs ipc`. Instalado via pacman; `omarchy-shell shell ping` responde `ok`.
+- Atalho criado em `~/.local/share/applications/omarchy-menu.desktop` ("Omarchy Menu", ícone `omarchy`): executa `omarchy-shell shell toggle omarchy.menu '{"menu":"root"}'`, o mesmo comando do botão. Aparece na grade de apps junto de Firefox/Foot. Teste de toggle via SSH: rc=0.
+
 ## Limites
 
-Toque real, teclado virtual, brilho, áudio e estabilidade de longo prazo ainda não validados na sessão. Bluetooth segue com `-110` (patch `0106` não aplicado neste kernel). A tela física foi confirmada por processos/DRM via SSH; a conferência visual é do proprietário.
+Teclado virtual, brilho, áudio e estabilidade de longo prazo ainda não validados na sessão. Bluetooth segue com `-110` (patch `0106` não aplicado neste kernel). A tela física foi confirmada por processos/DRM via SSH; a conferência visual é do proprietário.
