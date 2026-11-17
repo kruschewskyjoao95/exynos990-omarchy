@@ -18,6 +18,8 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 
 ## Feito, aguardando revisão
 
+- [codex] commit `536b4c1`: patch 0107 integrado ao baseline/série; quirk exclusivo Exynos990 evita lote sync rejeitado, CMU_AUD desabilitado junto do provider, PMU sem filho CLKOUT incompatível. Build isolado Image/módulos/DTBs e 23/23 testes PASS. Evidência `research/ufs-clocks-fixes.md`. Sem acesso ao telefone; empacotamento RAM e teste físico pendentes; desgaste UFS não resolvido por software.
+
 - [codex] commit `e540519`: investigação independente em `research/ufs-clocks-codex.md`; seis leituras diretas recovery/DTBO iguais aos backups, 13 contadores UFS e saved errors zerados, sem novo dmesg. CLKOUT: PMU compatible ausente da tabela; CMU_AUD: provider `pd_aud` desabilitado → deferred timeout. Sem patch/flash, sem validar escrita/suspensão. Parou USB ao detectar tomada pelo Claude; último estado observado slim em RAM.
 
 <!-- - [agente] commit <sha>: resumo -->
