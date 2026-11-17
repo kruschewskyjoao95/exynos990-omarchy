@@ -27,6 +27,7 @@ Continuação de `checks/arch-install-2026-11-17.md`. Telefone em Arch persisten
 - Atalho criado em `~/.local/share/applications/omarchy-menu.desktop` ("Omarchy Menu", ícone `omarchy`): executa `omarchy-shell shell toggle omarchy.menu '{"menu":"root"}'`, o mesmo comando do botão. Aparece na grade de apps junto de Firefox/Foot. Teste de toggle via SSH: rc=0.
 - Correção pós-teste: `toggle` no atalho falhava na segunda abertura (ficava só no OSD "Launching"); trocado para `summon` (sempre abre) + `StartupNotify=false`. Summon duplo via SSH: rc=0 e layer `omarchy-menu` presente.
 - Item "About" do menu morria na hora: faltava o pacote `fastfetch` (`fastfetch: command not found` no terminal). Instalado via pacman; render do About conferido em pty (tela de Hardware/logo sai normalmente).
+- Erro "input methods could not be updated [errno 2] 'fcitx5-remote'": faltava o `fcitx5` (o `omarchy-fcitx5.service` já estava enabled, mas inativo). Instalados `fcitx5`, `fcitx5-gtk`, `fcitx5-qt` (motores CJK do base upstream ficaram fora); serviço ativo, `omarchy input-method status` responde `{"installed_method": "none", "layout": "us"}`. Correção durável: os três pacotes entraram em `packaging/omarchy/desktop-packages.txt`.
 
 ## Limites
 
