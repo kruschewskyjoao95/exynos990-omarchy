@@ -1,0 +1,101 @@
+From 5648f19b660bf02e9a179bc4a2926c85301d75ea Mon Sep 17 00:00:00 2001
+From: r8s <r8s@localhost>
+Date: Tue, 17 Nov 2026 07:12:10 -0300
+Subject: [PATCH] arm64: dts: exynos990: add M5 C2 idle state, registered
+ disabled
+
+The Mongoose M5 pair (cpu6/7) had no idle state and stayed on WFI. Samsung's
+4.19 kernel runs the same per-core PMU sequence on M5 as on the A55/A76
+cores (flexpmu_cal_cpu_exynos9830.h core20/core21, already mirrored by
+exynos990-cpu-wake for cpu6/7) with the same PSCI power state 0x10000, and
+the stock kernel on this handset does enter lion-cpu-sleep on cpu6/7.
+
+The port author left M5 out after a cpu7 power-cycle probe wedged the SoC,
+so register the state disabled: dt_idle_states now maps a
+"linux,default-off" property on an idle-state node to CPUIDLE_FLAG_OFF.
+cpu6/7 keep plain WFI until userspace writes 0 to
+/sys/devices/system/cpu/cpu{6,7}/cpuidle/state1/disable, and writing 1
+turns it back off at any time.
+
+Latencies from the vendor DT (235/220 us); min-residency 2500 us like the
+port's A76 state instead of the vendor's 1000 us. Not tested on hardware.
+The DTB needs a kernel with the dt_idle_states change: an older kernel
+ignores the property and enables M5 C2 at boot.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ arch/arm64/boot/dts/exynos/exynos990.dtsi | 22 +++++++++++++++++++---
+ drivers/cpuidle/dt_idle_states.c          |  3 +++
+ 2 files changed, 22 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/exynos/exynos990.dtsi b/arch/arm64/boot/dts/exynos/exynos990.dtsi
+index 47dbc4b0dc2d..b35fe8af004f 100644
+--- a/arch/arm64/boot/dts/exynos/exynos990.dtsi
++++ b/arch/arm64/boot/dts/exynos/exynos990.dtsi
+@@ -153,6 +153,7 @@ cpu6: cpu@200 {
+ 			compatible = "samsung,mongoose-m5";
+ 			reg = <0x6>;
+ 			enable-method = "psci";
++			cpu-idle-states = <&BIG_CPU_SLEEP>;
+ 			capacity-dmips-mhz = <1024>;
+ 		};
+ 
+@@ -161,6 +162,7 @@ cpu7: cpu@201 {
+ 			compatible = "samsung,mongoose-m5";
+ 			reg = <0x7>;
+ 			enable-method = "psci";
++			cpu-idle-states = <&BIG_CPU_SLEEP>;
+ 			capacity-dmips-mhz = <1024>;
+ 		};
+ 
+@@ -183,9 +185,13 @@ cpu7: cpu@201 {
+ 		 * three use the standard "core off, cluster on" PSCI power state
+ 		 * 0x0010000; only the latencies differ, and those scale with core size.
+ 		 *
+-		 * M5 (cpu6/7) deliberately has NO idle state here: a userspace power-cycle
+-		 * probe of cpu7 hard-wedged the SoC on 2026-09-05 with no panic path, so
+-		 * the big cluster stays on plain WFI until its wake sequence is understood.
++		 * M5 (cpu6/7): a userspace power-cycle probe of cpu7 hard-wedged the
++		 * SoC on 2026-09-05, so its C2 state is registered *disabled*
++		 * (linux,default-off) and the cores keep plain WFI until someone
++		 * clears /sys/devices/system/cpu/cpu{6,7}/cpuidle/state1/disable.
++		 * Samsung's kernel runs the same per-core sequence on M5 as on the
++		 * other clusters (flexpmu_cal_cpu_exynos9830.h core20/core21) and the
++		 * same PSCI param; its DT lion-cpu-sleep is 235/220/1000 us.
+ 		 *
+ 		 * CAUTION before enabling this on a permanent kernel: the outstanding
+ 		 * CPU hard-hang presents as a core that stops executing entirely (zero
+@@ -219,6 +225,16 @@ MID_CPU_SLEEP: cpu-mid-sleep {
+ 				min-residency-us = <2500>;
+ 			};
+ 
++			BIG_CPU_SLEEP: cpu-big-sleep {
++				idle-state-name = "c2";
++				compatible = "arm,idle-state";
++				local-timer-stop;
++				linux,default-off;
++				arm,psci-suspend-param = <0x0010000>;
++				entry-latency-us = <235>;
++				exit-latency-us = <220>;
++				min-residency-us = <2500>;
++			};
+ 		};
+ 	};
+ 
+diff --git a/drivers/cpuidle/dt_idle_states.c b/drivers/cpuidle/dt_idle_states.c
+index 97feb7d8fb23..ffdd3baccc00 100644
+--- a/drivers/cpuidle/dt_idle_states.c
++++ b/drivers/cpuidle/dt_idle_states.c
+@@ -79,6 +79,9 @@ static int init_state_node(struct cpuidle_state *idle_state,
+ 	idle_state->flags = CPUIDLE_FLAG_RCU_IDLE;
+ 	if (of_property_read_bool(state_node, "local-timer-stop"))
+ 		idle_state->flags |= CPUIDLE_FLAG_TIMER_STOP;
++	/* Register the state disabled; userspace enables it via sysfs. */
++	if (of_property_read_bool(state_node, "linux,default-off"))
++		idle_state->flags |= CPUIDLE_FLAG_OFF;
+ 	/*
+ 	 * TODO:
+ 	 *	replace with kstrdup and pointer assignment when name
+-- 
+2.56.1
+

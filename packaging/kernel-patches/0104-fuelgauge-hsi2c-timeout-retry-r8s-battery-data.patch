@@ -1,0 +1,133 @@
+From 8e9ffd38730f4282b731b832efffeda2276d1d9d Mon Sep 17 00:00:00 2001
+From: r8s <r8s@localhost>
+Date: Tue, 17 Nov 2026 07:16:52 -0300
+Subject: [PATCH] r8s: fuel gauge - retry HSI2C timeouts, log their state, r8s
+ battery data
+
+i2c-exynos5 sets adap.retries = 3 but returns -ETIMEDOUT on a controller
+timeout, and the i2c core only retries -EAGAIN, so a single late or lost
+transfer on the MAX77705 bus (hsi2c_7) surfaced as a failed read of the
+max17042 fuel gauge. Restart the whole message list on -ETIMEDOUT, up to
+adap.retries times; the vendor driver (LineageOS universal9830 97369af7,
+drivers/i2c/busses/i2c-exynos5.c) retries every HSI2C timeout the same
+way, and its MAX77705 MFD retries each access 3 more times.
+
+The timeout warning now names the slave address and dumps INT_STATUS and
+TRANS_STATUS before the reset, to tell a late interrupt (transfer done,
+IRQ not serviced) from a hung bus.
+
+DT (r8s): 4500 mAh design capacity on the inherited battery node (float
+stays 4.38 V, which matches r8s battery,chg_float_voltage = 4380 mV), and
+max17042 health thresholds dead-volt 3200 mV (vendor SW V-empty) and
+over-volt 4380 mV. No temperature thresholds: the gauge TEMP register is
+host-written on this phone (vendor thermal_source = ADC) and is stale.
+
+Not tested on the device.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ arch/arm64/boot/dts/exynos/exynos990-r8s.dts | 25 ++++++++++++++
+ drivers/i2c/busses/i2c-exynos5.c             | 34 ++++++++++++++++----
+ 2 files changed, 52 insertions(+), 7 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/exynos/exynos990-r8s.dts b/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
+index fb487910d713..2347955907d8 100644
+--- a/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
++++ b/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
+@@ -433,6 +433,31 @@ otg_vbus: usb-otg-vbus {
+ 	};
+ };
+ 
++&hsi2c_7 {
++	/*
++	 * Fuel gauge health thresholds from the r8s vendor battery data:
++	 * SW V-empty 3200 mV (vendor dmesg, max77705_fuelgauge_parse_dt) and
++	 * the 4380 mV float voltage. Temperature thresholds are left out on
++	 * purpose: the vendor kernel feeds the gauge's TEMP register from the
++	 * AP-side NTC (battery,thermal_source = ADC), nothing does that here,
++	 * so the gauge temperature is stale. maxim,rsns-microohm = 5000 in
++	 * the SoC dtsi matches the vendor fg_resistor = 2 (0.3125 mA/LSB).
++	 */
++	fuelgauge@36 {
++		maxim,dead-volt = <3200>;
++		maxim,over-volt = <4380>;
++	};
++};
++
++/*
++ * r8s pack: 4500 mAh design (vendor charge_full_design = 4500000). The
++ * 4.38 V float inherited from the z3s node matches r8s
++ * battery,chg_float_voltage = <0x111c> (4380 mV); keep the two in step.
++ */
++&z3s_battery {
++	charge-full-design-microamp-hours = <4500000>;
++};
++
+ /*
+  * microSD controller (dwmmc2 @ 0x132e0000). Disabled on r8s.
+  *
+diff --git a/drivers/i2c/busses/i2c-exynos5.c b/drivers/i2c/busses/i2c-exynos5.c
+index e330015087ab..0245e6358ac4 100644
+--- a/drivers/i2c/busses/i2c-exynos5.c
++++ b/drivers/i2c/busses/i2c-exynos5.c
+@@ -794,10 +794,18 @@ static int exynos5_i2c_xfer_msg(struct exynos5_i2c *i2c,
+ 		ret = exynos5_i2c_wait_bus_idle(i2c);
+ 
+ 	if (ret < 0) {
+-		exynos5_i2c_reset(i2c);
++		/*
++		 * Log the state before the reset clears it: a pending
++		 * TRANS_DONE in INT_STATUS means the bus finished and only the
++		 * interrupt was late; a busy master state means the bus hung.
++		 */
+ 		if (ret == -ETIMEDOUT)
+-			dev_warn(i2c->dev, "%s timeout\n",
+-				 (msgs->flags & I2C_M_RD) ? "rx" : "tx");
++			dev_warn_ratelimited(i2c->dev,
++				 "%s timeout, addr 0x%02x int_status 0x%08x trans_status 0x%08x\n",
++				 (msgs->flags & I2C_M_RD) ? "rx" : "tx", msgs->addr,
++				 readl(i2c->regs + HSI2C_INT_STATUS),
++				 readl(i2c->regs + HSI2C_TRANS_STATUS));
++		exynos5_i2c_reset(i2c);
+ 	}
+ 
+ 	/* Return the state as in interrupt routine */
+@@ -808,7 +816,7 @@ static int exynos5_i2c_xfer(struct i2c_adapter *adap,
+ 			struct i2c_msg *msgs, int num)
+ {
+ 	struct exynos5_i2c *i2c = adap->algo_data;
+-	int i, ret;
++	int i, ret, try;
+ 
+ 	ret = clk_enable(i2c->pclk);
+ 	if (ret)
+@@ -818,11 +826,23 @@ static int exynos5_i2c_xfer(struct i2c_adapter *adap,
+ 	if (ret)
+ 		goto err_pclk;
+ 
+-	for (i = 0; i < num; ++i) {
+-		ret = exynos5_i2c_xfer_msg(i2c, msgs + i, i + 1 == num);
+-		if (ret)
++	/*
++	 * The i2c core only retries -EAGAIN, so adap.retries never covered a
++	 * timeout. The controller is already reset by then; restart the whole
++	 * message list, as the vendor driver does for every HSI2C timeout.
++	 */
++	for (try = 0; try <= adap->retries; try++) {
++		for (i = 0; i < num; ++i) {
++			ret = exynos5_i2c_xfer_msg(i2c, msgs + i, i + 1 == num);
++			if (ret)
++				break;
++		}
++		if (ret != -ETIMEDOUT)
+ 			break;
+ 	}
++	if (try)
++		dev_warn_ratelimited(i2c->dev, "addr 0x%02x: %s after %d timeout(s)\n",
++				     msgs->addr, ret ? "failed" : "recovered", try);
+ 
+ 	clk_disable(i2c->clk);
+ err_pclk:
+-- 
+2.56.1
+

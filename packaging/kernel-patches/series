@@ -1,0 +1,7 @@
+# Patches aplicados por padrão depois dos 24 do port, nesta ordem.
+# Só entram aqui os que não mudam o comportamento do boot sem opt-in.
+0100-arm64-dts-exynos990-r8s-6gb-memory-map.patch
+0102-gpu-dvfs-g3d-acpm-clock-opt-in-devfreq.patch
+0103-cpuidle-m5-arm64-dts-exynos990-add-M5-C2-idle-state-registered-.patch
+0104-fuelgauge-hsi2c-timeout-retry-r8s-battery-data.patch
+0105-suspend-exynos990-cpu-wake-optional-PMU-prep-for-deep-suspend.patch

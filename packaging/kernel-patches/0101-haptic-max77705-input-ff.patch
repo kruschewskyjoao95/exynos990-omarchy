@@ -1,0 +1,343 @@
+From 1e1b244de2b258c8341b5866cb95e42ad03cc868 Mon Sep 17 00:00:00 2001
+From: r8s <r8s@localhost>
+Date: Tue, 17 Nov 2026 07:16:30 -0300
+Subject: [PATCH] r8s: MAX77705 haptic (vibration) as input force-feedback
+ device
+
+Extend max77693-haptic to the MAX77705, whose haptic block uses the
+MAX77843 layout (MAINCTRL1 0x02 BIASEN bit 7, MCONFIG 0x10: LRA bit 7,
+MEN bit 6, PWM divider 128 in [1:0]), as in Samsung's
+drivers/motor/max77705_haptic.c (LineageOS universal9830 97369af7).
+
+There is no MAX77705 MFD core in this port: the PMIC top (0x66) is
+owned by the r8s Type-C driver. That driver now registers an i2c regmap
+and populates its child nodes (best effort, never failing USB), and
+the haptic child takes the parent's regmap.
+
+r8s specifics, from the stock device tree:
+- PWM channel 1 on gpp4-5 (function 2, pull-down), period 37650 ns
+  (haptic,period[0], ~207 Hz after the chip's /128);
+- duty capped at the vendor's 88% (haptic,normal_ratio);
+- supply VDD_MOTOR_3P3 = S2MPS19 LDO27M (L27CTRL 0x60, from Samsung
+  s2mps19-regulator.h), added to the ACPM regulator driver;
+- BIASEN is only set, never cleared, as the vendor driver does.
+
+Adds the Exynos 990 PWM block (0x106f0000, OSCCLK tick as in the vendor
+driver; the PERIC0 PCLK gate is not modelled).
+
+Enable with CONFIG_INPUT_MAX77693_HAPTIC=m. Untested on the device.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ arch/arm64/boot/dts/exynos/exynos990-r8s.dts | 39 ++++++++++++++++++++
+ arch/arm64/boot/dts/exynos/exynos990.dtsi    | 14 +++++++
+ drivers/input/misc/Kconfig                   |  6 +--
+ drivers/input/misc/max77693-haptic.c         | 36 +++++++++++++++---
+ drivers/regulator/s2mps19-acpm-regulator.c   |  3 ++
+ drivers/usb/typec/Kconfig                    |  1 +
+ drivers/usb/typec/max77705_r8s_typec.c       | 14 +++++++
+ include/linux/mfd/max77693-common.h          |  1 +
+ 8 files changed, 105 insertions(+), 9 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/exynos/exynos990-r8s.dts b/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
+index fb487910d713..139fd101e1ad 100644
+--- a/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
++++ b/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
+@@ -313,6 +313,16 @@ max77705_irq: max77705-irq-pins {
+ 	};
+ };
+ 
++&pinctrl_peric0 {
++	/* motor PWM (TOUT1), stock DT "vib-pwm": function 2, pull-down */
++	vib_pwm: vib-pwm-pins {
++		samsung,pins = "gpp4-5";
++		samsung,pin-function = <EXYNOS_PIN_FUNC_2>;
++		samsung,pin-pud = <EXYNOS_PIN_PULL_DOWN>;
++		samsung,pin-drv = <EXYNOS5420_PIN_DRV_LV1>;
++	};
++};
++
+ /*
+  * USB gadget: this is the recovery channel (ACM serial root shell + RNDIS),
+  * so it must work from the very first boot. Peripheral-only, high-speed;
+@@ -424,6 +434,35 @@ typec@66 {
+ 		pinctrl-0 = <&max77705_irq>;
+ 		usb-role-switch = <&usbdrd_dwc3>;
+ 		vbus-supply = <&otg_vbus>;
++
++		/*
++		 * LRA motor (LINEAR_0832RC) on the MAX77705 haptic block, driven
++		 * by PWM channel 1 on gpp4-5. Values from the stock DT: period
++		 * 37650 ns (haptic,period[0]; /128 in the chip = ~207 Hz),
++		 * supply VDD_MOTOR_3P3 = S2MPS19 LDO27M.
++		 */
++		haptic {
++			compatible = "maxim,max77705-haptic";
++			pwms = <&pwm 1 37650 0>;
++			haptic-supply = <&vdd_motor>;
++			pinctrl-names = "default";
++			pinctrl-0 = <&vib_pwm>;
++		};
++	};
++};
++
++&pwm {
++	samsung,pwm-outputs = <1>;
++	status = "okay";
++};
++
++&acpm_pmic_regulators {
++	regulators {
++		vdd_motor: ldo27m {
++			regulator-name = "VDD_MOTOR_3P3";
++			regulator-min-microvolt = <3300000>;
++			regulator-max-microvolt = <3300000>;
++		};
+ 	};
+ };
+ 
+diff --git a/arch/arm64/boot/dts/exynos/exynos990.dtsi b/arch/arm64/boot/dts/exynos/exynos990.dtsi
+index 47dbc4b0dc2d..05f44383e422 100644
+--- a/arch/arm64/boot/dts/exynos/exynos990.dtsi
++++ b/arch/arm64/boot/dts/exynos/exynos990.dtsi
+@@ -831,6 +831,20 @@ cs35l41_l: cs35l41@41 {
+ 		};
+ 		};
+ 
++		/*
++		 * PWM timer block (TOUT0..4). Counts from OSCCLK, as the vendor
++		 * driver does (pwm_sclk = OSCCLK); the PCLK gate
++		 * GATE_PERIC0_TOP1_PWM is not modelled and is assumed left on.
++		 */
++		pwm: pwm@106f0000 {
++			compatible = "samsung,s3c6400-pwm";
++			reg = <0x106f0000 0x1000>;
++			clocks = <&oscclk>;
++			clock-names = "timers";
++			#pwm-cells = <3>;
++			status = "disabled";
++		};
++
+ 		/* Bluetooth: BCM4375 BT over UART1 (0x10840000, ALIVE domain, HW flow
+ 		 * control). This is the BT side of the BCM4375 combo (WiFi is the PCIe
+ 		 * side). The bluetooth serdev child drives BT_EN and the wake GPIOs;
+diff --git a/drivers/input/misc/Kconfig b/drivers/input/misc/Kconfig
+index 6a852c76331b..a650becbf095 100644
+--- a/drivers/input/misc/Kconfig
++++ b/drivers/input/misc/Kconfig
+@@ -240,12 +240,12 @@ config INPUT_MAX77650_ONKEY
+ 	  will be called max77650-onkey.
+ 
+ config INPUT_MAX77693_HAPTIC
+-	tristate "MAXIM MAX77693/MAX77843 haptic controller support"
+-	depends on (MFD_MAX77693 || MFD_MAX77843) && PWM
++	tristate "MAXIM MAX77693/MAX77843/MAX77705 haptic controller support"
++	depends on (MFD_MAX77693 || MFD_MAX77843 || TYPEC_MAX77705_R8S) && PWM
+ 	select INPUT_FF_MEMLESS
+ 	help
+ 	  This option enables support for the haptic controller on
+-	  MAXIM MAX77693 and MAX77843 chips.
++	  MAXIM MAX77693, MAX77843 and MAX77705 chips.
+ 
+ 	  To compile this driver as module, choose M here: the
+ 	  module will be called max77693-haptic.
+diff --git a/drivers/input/misc/max77693-haptic.c b/drivers/input/misc/max77693-haptic.c
+index 0e646f1b257b..372d1fb90682 100644
+--- a/drivers/input/misc/max77693-haptic.c
++++ b/drivers/input/misc/max77693-haptic.c
+@@ -1,6 +1,6 @@
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ /*
+- * MAXIM MAX77693/MAX77843 Haptic device driver
++ * MAXIM MAX77693/MAX77843/MAX77705 Haptic device driver
+  *
+  * Copyright (C) 2014,2015 Samsung Electronics
+  * Jaewon Kim <jaewon02.kim@samsung.com>
+@@ -15,6 +15,7 @@
+ #include <linux/regmap.h>
+ #include <linux/input.h>
+ #include <linux/module.h>
++#include <linux/of.h>
+ #include <linux/platform_device.h>
+ #include <linux/pwm.h>
+ #include <linux/slab.h>
+@@ -85,7 +86,11 @@ static int max77843_haptic_bias(struct max77693_haptic *haptic, bool on)
+ {
+ 	int error;
+ 
+-	if (haptic->dev_type != TYPE_MAX77843)
++	/* MAX77705: same MAINCTRL1 (0x02) BIASEN bit 7, see Samsung max77705_haptic.c */
++	if (haptic->dev_type != TYPE_MAX77843 && haptic->dev_type != TYPE_MAX77705)
++		return 0;
++	/* the vendor driver never clears it; other PMIC blocks may rely on it */
++	if (haptic->dev_type == TYPE_MAX77705 && !on)
+ 		return 0;
+ 
+ 	error = regmap_update_bits(haptic->regmap_haptic,
+@@ -116,6 +121,7 @@ static int max77693_haptic_configure(struct max77693_haptic *haptic,
+ 		config_reg = MAX77693_HAPTIC_REG_CONFIG2;
+ 		break;
+ 	case TYPE_MAX77843:
++	case TYPE_MAX77705:	/* same MCONFIG (0x10) layout: LRA bit 7, MEN bit 6, DIV[1:0] */
+ 		value = (haptic->type << MCONFIG_MODE_SHIFT) |
+ 			(enable << MCONFIG_MEN_SHIFT) |
+ 			MAX77693_HAPTIC_PWM_DIVISOR_128;
+@@ -249,6 +255,12 @@ static int max77693_haptic_play_effect(struct input_dev *dev, void *data,
+ 	period_mag_multi = (u64)pargs.period * haptic->magnitude;
+ 	haptic->pwm_duty = (unsigned int)(period_mag_multi >>
+ 						MAX_MAGNITUDE_SHIFT);
++	/*
++	 * r8s LRA: the vendor kernel never drives above 88% duty
++	 * (haptic,normal_ratio). Duty is (period + pwm_duty) / 2, so 76% here.
++	 */
++	if (haptic->dev_type == TYPE_MAX77705)
++		haptic->pwm_duty = haptic->pwm_duty * 76 / 100;
+ 
+ 	schedule_work(&haptic->work);
+ 
+@@ -292,7 +304,7 @@ static void max77693_haptic_close(struct input_dev *dev)
+ 
+ static int max77693_haptic_probe(struct platform_device *pdev)
+ {
+-	struct max77693_dev *max77693 = dev_get_drvdata(pdev->dev.parent);
++	struct max77693_dev *max77693 = NULL;
+ 	struct max77693_haptic *haptic;
+ 	int error;
+ 
+@@ -300,14 +312,20 @@ static int max77693_haptic_probe(struct platform_device *pdev)
+ 	if (!haptic)
+ 		return -ENOMEM;
+ 
+-	haptic->regmap_pmic = max77693->regmap;
+ 	haptic->dev = &pdev->dev;
+ 	haptic->type = MAX77693_HAPTIC_LRA;
+ 	haptic->mode = MAX77693_HAPTIC_EXTERNAL_MODE;
+ 	haptic->suspend_state = false;
+ 
+ 	/* Variant-specific init */
+-	haptic->dev_type = max77693->type;
++	if (of_device_is_compatible(pdev->dev.of_node, "maxim,max77705-haptic")) {
++		/* no MFD core: the parent is the PMIC i2c device, sharing its regmap */
++		haptic->dev_type = TYPE_MAX77705;
++	} else {
++		max77693 = dev_get_drvdata(pdev->dev.parent);
++		haptic->regmap_pmic = max77693->regmap;
++		haptic->dev_type = max77693->type;
++	}
+ 	switch (haptic->dev_type) {
+ 	case TYPE_MAX77693:
+ 		haptic->regmap_haptic = max77693->regmap_haptic;
+@@ -315,6 +333,11 @@ static int max77693_haptic_probe(struct platform_device *pdev)
+ 	case TYPE_MAX77843:
+ 		haptic->regmap_haptic = max77693->regmap;
+ 		break;
++	case TYPE_MAX77705:
++		haptic->regmap_haptic = dev_get_regmap(pdev->dev.parent, NULL);
++		if (!haptic->regmap_haptic)
++			return dev_err_probe(&pdev->dev, -ENODEV, "no PMIC regmap\n");
++		break;
+ 	default:
+ 		dev_err(&pdev->dev, "unsupported device type: %u\n",
+ 			haptic->dev_type);
+@@ -415,6 +438,7 @@ MODULE_DEVICE_TABLE(platform, max77693_haptic_id);
+ static const struct of_device_id of_max77693_haptic_dt_match[] = {
+ 	{ .compatible = "maxim,max77693-haptic", },
+ 	{ .compatible = "maxim,max77843-haptic", },
++	{ .compatible = "maxim,max77705-haptic", },
+ 	{ /* sentinel */ },
+ };
+ MODULE_DEVICE_TABLE(of, of_max77693_haptic_dt_match);
+@@ -432,5 +456,5 @@ module_platform_driver(max77693_haptic_driver);
+ 
+ MODULE_AUTHOR("Jaewon Kim <jaewon02.kim@samsung.com>");
+ MODULE_AUTHOR("Krzysztof Kozlowski <krzk@kernel.org>");
+-MODULE_DESCRIPTION("MAXIM 77693/77843 Haptic driver");
++MODULE_DESCRIPTION("MAXIM 77693/77843/77705 Haptic driver");
+ MODULE_LICENSE("GPL");
+diff --git a/drivers/regulator/s2mps19-acpm-regulator.c b/drivers/regulator/s2mps19-acpm-regulator.c
+index d555716f3278..70e06f5e8e02 100644
+--- a/drivers/regulator/s2mps19-acpm-regulator.c
++++ b/drivers/regulator/s2mps19-acpm-regulator.c
+@@ -39,6 +39,7 @@
+ 
+ /* Control registers, from include/linux/mfd/samsung/s2mps19-regulator.h. */
+ #define S2MPS19_REG_B4M_CTRL		0x26
++#define S2MPS19_REG_L27M_CTRL		0x60
+ 
+ struct s2mps19_acpm {
+ 	struct acpm_handle *acpm;
+@@ -121,6 +122,8 @@ static const struct regulator_ops s2mps19_acpm_ops = {
+ static const struct regulator_desc s2mps19_acpm_regulators[] = {
+ 	/* BUCK4M = VDD_WIFI_0P95, the QCA6390 core supply. */
+ 	S2MPS19_ACPM_DESC("BUCK4M", "buck4m", S2MPS19_REG_B4M_CTRL, 950000),
++	/* LDO27M = VDD_MOTOR_3P3 on r8s, the haptic motor supply. */
++	S2MPS19_ACPM_DESC("LDO27M", "ldo27m", S2MPS19_REG_L27M_CTRL, 3300000),
+ };
+ 
+ static int s2mps19_acpm_probe(struct platform_device *pdev)
+diff --git a/drivers/usb/typec/Kconfig b/drivers/usb/typec/Kconfig
+index 84be56e3de6c..41b6d99c482e 100644
+--- a/drivers/usb/typec/Kconfig
++++ b/drivers/usb/typec/Kconfig
+@@ -119,6 +119,7 @@ endif # TYPEC
+ config TYPEC_MAX77705_R8S
+ 	tristate "Maxim MAX77705 Type-C role detection (Galaxy S20 FE)"
+ 	depends on I2C && USB_ROLE_SWITCH
++	select REGMAP_I2C
+ 	help
+ 	  Follows the MAX77705 USB-C firmware's CC/PD status, drives the dwc3
+ 	  USB role switch and the charger's OTG VBUS regulator. Samsung r8s only.
+diff --git a/drivers/usb/typec/max77705_r8s_typec.c b/drivers/usb/typec/max77705_r8s_typec.c
+index 33d64bc01850..d34bacf13be5 100644
+--- a/drivers/usb/typec/max77705_r8s_typec.c
++++ b/drivers/usb/typec/max77705_r8s_typec.c
+@@ -16,6 +16,8 @@
+ #include <linux/module.h>
+ #include <linux/mutex.h>
+ #include <linux/of.h>
++#include <linux/of_platform.h>
++#include <linux/regmap.h>
+ #include <linux/regulator/consumer.h>
+ #include <linux/usb/role.h>
+ 
+@@ -278,6 +280,12 @@ static int r8s_typec_state_show(struct seq_file *s, void *unused)
+ }
+ DEFINE_SHOW_ATTRIBUTE(r8s_typec_state);
+ 
++static const struct regmap_config r8s_pmic_regmap_config = {
++	.reg_bits = 8,
++	.val_bits = 8,
++	.max_register = 0x51,	/* MAX77705_PMIC_REG_USBC_RESET */
++};
++
+ static int r8s_typec_probe(struct i2c_client *client)
+ {
+ 	struct device *dev = &client->dev;
+@@ -355,6 +363,12 @@ static int r8s_typec_probe(struct i2c_client *client)
+ 	debugfs_create_file("state", 0444, d->dbg, d, &r8s_typec_state_fops);
+ 	dev_info(dev, "MAX77705 USB-C hw %02x fw %02x, irq %d, vbus %s\n", hw, fw, client->irq,
+ 		 d->vbus ? "regulator" : "none");
++
++	/* PMIC-top function blocks (haptic) are child nodes using this client's
++	 * regmap. Best effort: USB is the recovery channel, never fail it. */
++	if (IS_ERR(devm_regmap_init_i2c(client, &r8s_pmic_regmap_config)) ||
++	    devm_of_platform_populate(dev))
++		dev_warn(dev, "PMIC child devices (haptic) not created\n");
+ 	return 0;
+ 
+ put_sw:
+diff --git a/include/linux/mfd/max77693-common.h b/include/linux/mfd/max77693-common.h
+index a5bce099f1ed..a52e4a0774d1 100644
+--- a/include/linux/mfd/max77693-common.h
++++ b/include/linux/mfd/max77693-common.h
+@@ -12,6 +12,7 @@ enum max77693_types {
+ 	TYPE_MAX77693_UNKNOWN,
+ 	TYPE_MAX77693,
+ 	TYPE_MAX77843,
++	TYPE_MAX77705,
+ 
+ 	TYPE_MAX77693_NUM,
+ };
+-- 
+2.56.1
+
