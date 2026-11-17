@@ -54,6 +54,8 @@ Marcadores de êxito foram conferidos na resposta real do console, excluindo a l
 
 O descritor voltou a mostrar `eol_info=0x01`, `life_time_estimation_a=0x0B` e `life_time_estimation_b=0x0B` no kernel novo. É uma segunda leitura com a mesma família de driver, **não confirmação independente em Recovery/Android**. O possível desgaste continua pendente antes de instalação persistente; o patch não corrige desgaste físico.
 
+**Atualização após o ensaio:** encontrada confirmação independente no log Samsung/LineageOS Recovery preservado, `LT: 0xbb`; a fórmula da mesma revisão do driver corresponde a A=B=0x0B. A confirmação no driver Samsung está atendida; a condição física continua sendo uma limitação para instalação persistente. Evidência e opções em [ufs-health.md](../research/ufs-health.md).
+
 Os consoles de reboot, tanto do slim antigo quanto do novo, emitiram `Failed to connect to system scope bus ... No such file or directory`; apesar disso, houve desligamento da USB e retorno ao lk3rd confirmado pelo host. A origem dessa mensagem ainda não foi diagnosticada. Não declarar shutdown silencioso ou recuperação completa a partir desse retorno.
 
 Nenhuma partição foi gravada ou montada por comandos desta sessão; não houve instalação Arch/Omarchy. Sem ensaio de escrita UFS, power-mode/suspensão, carga longa, renderização ou poweroff físico. V2 foi repetido com 0107; V3/V7/V8 continuam incompletos. Os artefatos anteriores em `out/boot/` não foram substituídos. Estado final observado: **lk3rd fastboot**, nenhum processo de coleta serial mantido aberto.

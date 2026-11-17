@@ -30,3 +30,5 @@ Nenhum comando USB, flash, montagem UFS, escrita, mudança de power-mode ou rebo
 No ensaio em RAM, verificar ausência dos quatro erros de configuração e dos probes CLKOUT/AUD indevidos, negociação UFS G3/2 lanes, console, PMU/poweroff, contadores e leituras diretas comparadas aos backups. Escrita persistente e suspensão exigem ensaios próprios. Não declarar validação física a partir deste build.
 
 Saúde: os valores previamente reportados `life_time_estimation_a/b=0x0B` precisam de confirmação independente antes da instalação persistente. Pre-EOL e estimativa de vida medem aspectos diferentes, portanto `eol_info=0x01` não invalida automaticamente o alerta de desgaste. Essas correções de software não corrigem desgaste físico.
+
+Atualização: [confirmação independente encontrada no log Samsung preservado](ufs-health.md), anterior aos testes nativos: `LT: 0xbb`. O indicador não foi introduzido pelo patch 0107; a limitação física permanece.
