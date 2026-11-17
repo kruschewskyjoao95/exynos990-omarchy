@@ -59,9 +59,19 @@ Evidência: `logs/m2-native-partition-map.log`; implementação em `sources/lk3r
 
 ## Pendências e estado final
 
-Bluetooth apresentou timeouts HCI `-110` e falha ao ler versão QCA. Também há avisos de CPU features/MPIDR, reguladores dummy, falha de `exynos-clkout`, timeout de `exynos990-cmu` e ausência de `regulatory.db`/`autofs4`. Os avisos não impediram esses boots; suas causas e impactos ainda precisam de avaliação. Não declarar estabilidade ou todos os drivers funcionais por `systemd=running`.
+Bluetooth apresentou timeouts HCI `-110` e falha ao ler versão QCA. Também há avisos de CPU features/MPIDR, reguladores dummy e ausência de `regulatory.db`/`autofs4`. Não declarar estabilidade ou todos os drivers funcionais por `systemd=running`.
 
-**UFS/clocks (17/11/2026, coleta somente leitura em slim, sem flash/montagem):** dme-set recusado em `0x9540` (`PA_DBG_OV_TM`) e `0x321` (`RX_SYNC_MASK_LENGTH`) com link FAST G3 OK e leituras conferindo; `clkout` sem match (driver só 5410/5420/5433), `cmu_aud 18c00000` timeout no PD (fall gracefully), `Not disabling unused clocks` por `clk_ignore_unused` intencional. Origem no código e sysfs (órfãos, `ufs-core-clock` 166,5 MHz) registrados em `research/ufs-clocks.md` e `logs/m2-{clocks,ufs}-*.log`. Nenhum bloqueia o rootfs; sync mask não aplicada fica como pendência de power-mode.
+## UFS e clocks, leitura de novo no slim
+
+Segunda sessão no mesmo slim, ainda em RAM, sem flash e sem montar UFS. O aparelho já estava no console `root@r8s-slim` com o carimbo `Tue Nov 17 15:41:42 UTC 2026`. `/proc/mounts` sem `sd`/`ufs`.
+
+Os quatro `dme-set` (`0x9540`/`0x321`) ocorrem e, na linha seguinte, o link vai a `FAST series_B G_3 L_2`. Sysfs: `HS_GEAR3`, 2 pistas, `HS_RATE_B`, `ACTIVE`. Leitura de `/dev/sda` (512 B), `/dev/sda13` (2 MiB, hash igual ao da sessão anterior) e `/dev/sda33` (4 KiB zero). `eol_info=0x01` e estimativa de vida `0x0B` nos dois campos; a leitura funcionou. Análise e origem no código: [ufs-clocks.md](../research/ufs-clocks.md). Logs: `logs/m2-ufs-dmesg.log`, `logs/m2-ufs-sysfs.log`.
+
+**Saúde 0x0B (17/11/2026, boot novo em RAM + releitura `logs/m2-ufs-health.log`):** `0x01/0x0B/0x0B` estável; sysfs lê offsets 2/3/4 sem cache (JEDEC confere), então descartados bug de decode e descritor errado. Vida `0x0B` = ciclos P/E excedidos (vendor-specific) — nenhum patch de kernel corrige. Resolução = mitigação (RAM-first, sem escrita pesada) + confirmação no Recovery/Android antes de instalação persistente; ver `research/ufs-clocks.md`.
+
+`clk: Not disabling unused clocks` é o `clk_ignore_unused` da cmdline. `exynos990-cmu 18c00000` não liga porque `&pd_aud` está `disabled`; o driver ficou só com `10a00000`. `exynos-clkout` continua `-22`. Logs: `logs/m2-clocks-dmesg.log`, `logs/m2-clocks-sysfs.log`. Isso não testa escrita nem carga longa do UFS.
+
+A coleta anterior no mesmo slim (`logs/m2-ufs-read.log`) hasheou 1 MiB de `sda33` (`30e14955…`), que é 1 MiB de zeros; os 4 KiB desta sessão são o prefixo desse bloco. A máscara de sync não foi aplicada. Escrita, mount e power-mode continuam sem ensaio. Seis leituras de recovery/DTBO, noutra coleta: [ufs-clocks-codex.md](../research/ufs-clocks-codex.md).
 
 Solicitado `systemctl reboot` ao final do slim para voltar ao lk3rd. O resultado do retorno está em `logs/m2-slim-return-fastboot.log`. Não houve gravação de kernel no slot virtual, gravação de userdata nem instalação do Arch/Omarchy no aparelho. O slot boot permanece vazio; retorno normal ao LineageOS exige procedimento de restauração compatível com o mapa alterado. Recovery permaneceu preservado; a restauração completa ainda não foi ensaiada.
 

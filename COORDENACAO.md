@@ -4,8 +4,13 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 
 ## Em andamento
 
+- [codex] Investigar saúde UFS 0x0B: cruzar log Samsung preservado com sysfs mainline e fonte Lineage fixada; sem comandos de escrita/reset/flash no telefone. Caminhos: `research/ufs-health.md`, `checks/ufs-clocks-ram.md`, `research/ufs-clocks-fixes.md`, `out/validation/ufs-health/`.
+
+
+
 
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
+- [claude] 0x0B: análise do alerta de desgaste (loop de releitura em slim + spec JEDEC + mitigação). Arquivos: `research/ufs-clocks.md`, `checks/m2-device-test.md`, `COORDENACAO.md`, `logs/m2-ufs-*`; sem flash ou montagem UFS.
 
 ## A fazer
 
@@ -26,6 +31,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 
 <!-- - [agente] commit <sha>: resumo -->
 - [claude] commit `d05751e`: investigação UFS/clocks baseline (slim só leitura, sem flash/montagem): dme-set recusado em debug com link FAST G3 OK; clkout/cmu sem suporte; clk_ignore_unused intencional. Comissão em `research/ufs-clocks.md`; pendência em `checks/m2-device-test.md`.
+- [codex] avisos UFS/clocks do baseline, árvore sem commit: `dme-set` 0x9540/0x321 sai de `exynos_ufs_config_sync_pattern_mask` e o link segue `FAST G3 x2`; `cmu_aud` `-110` porque `pd_aud` está disabled (não é timeout ao energizar AUD); `clk_ignore_unused` e `exynos-clkout -22` (pai `exynos850-pmu`) rastreados. Leitura em slim RAM sem mount (`sda13` igual; começo de `sda33` é zero em 4 KiB e em 1 MiB). `research/ufs-clocks.md`, `logs/m2-ufs-*`, `logs/m2-clocks-*`. Sem flash e sem escrita UFS.
 - [codex] commits `39204cc`, `c376fde`: backup externo no HD Dados (23 arquivos/400.893.292 B, todos os hashes iguais; manifesto 10/10 OK); Recovery root/modelo/bateria 100% conferidos. lk3rd instalado com readback aprovado; fastboot confirmado; mini e slim iniciaram kernel AArch64 nativo, sem UFS montada. Slim: systemd running/0 failed, touchscreen e DRM enumerados. Retorno ao lk3rd confirmado após ambos. Logs/evidência copiados e verificados no HD. **Sem instalação Arch/Omarchy; V3–V9 pendentes.** Ver `checks/m2-device-test.md` (avisos e novo mapa GPT).
 - [codex] commit `e28e769`: corrige PR6 — Heimdall recebe `lk3rd-r8s.img`, TAR reservado ao Odin, PIT/autorização antes da escrita; referências do roadmap e nota obsoleta do manifesto corrigidas. Testes: runbook 5/5 e kernel-sets 3/3; TAR/LZ4 rejeitados no comando e payload descomprimido igual ao IMG byte a byte. Sem aparelho/flash.
 - [claude] commit `de7cc81`: PR6 correção de roteiro e manifesto (empilhado no PR5) — backup-verify via `backup-manifest.sha256`, Heimdall `--BOOT`/`boot.img.lz4` definido, `m1-artifacts.md` com baseline atual. Regressão: build 17/17, instalador 10/10, artefatos 56/56.
@@ -57,10 +63,10 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 
 - [ ] [codex] `checks/ufs-clocks-ram.md`: confirmar saúde UFS em Recovery/Android (estimativas A/B repetiram 0x0B) antes de instalação persistente; diagnosticar mensagem system scope bus no reboot. Retorno ao lk3rd foi confirmado, sem comprovar shutdown silencioso ou restauração completa.
 
-- [ ] [codex] `research/ufs-clocks.md` e `checks/m2-device-test.md`: distinguir leitura aprovada de escrita/power-mode não validados; evitar “nenhum bloqueia o rootfs”/ausência de erro físico como conclusão. Causa precisa de CMU_AUD: `pd_aud` está desabilitado (patch 0005 e DT vivo), provider ausente → `__genpd_dev_pm_attach`/`driver_deferred_probe_check_state` → -110; não foi observado timeout ao energizar AUD. Seis hashes diretos e evidência independente em `research/ufs-clocks-codex.md`.
+- [ ] [codex] Conferir a árvore de `research/ufs-clocks.md` e `checks/m2-device-test.md` (sem commit): leitura curta separada de escrita/power-mode; CMU_AUD é `pd_aud` disabled, não timeout ao energizar; `sda33` em 4 KiB e 1 MiB são zeros de comprimentos diferentes; “nenhum bloqueia o rootfs” saiu do check. Evidência independente segue em `research/ufs-clocks-codex.md`.
 
 <!-- - [revisor] <sha ou arquivo>: problema → ação esperada. Marque [x] quando o autor resolver. -->
-- [ ] [codex] Teste físico `c376fde`: Bluetooth falha com HCI -110; UFS emite avisos dme-set; CPU/clocks/reguladores têm avisos. Coletar diagnóstico dirigido antes de validar escrita UFS/carga/energia. `systemd=running` e enumeração DRM não comprovam aceleração gráfica nem estabilidade.
+- [ ] [codex] Teste físico `c376fde`: Bluetooth segue com HCI -110. UFS/clocks diagnosticados em `research/ufs-clocks.md` (link HS-G3 apesar dos `dme-set`; sem escrita). CPU/MPIDR e reguladores dummy ainda sem laudo. `systemd=running` e enumeração DRM não comprovam aceleração gráfica nem estabilidade.
 - [ ] [codex] GPT alterada pelo próprio lk3rd (`automatic_repartitioning.c`): antiga BOOT de 59 MiB virou lk3rd de 2 MiB + boot de 57 MiB. Revisar restauração pelo mapa atual; não passar backup antigo de 59 MiB para a nova boot de 57 MiB, nem usar `sda13` como boot Linux. Recovery preservado; retorno completo ao LineageOS ainda não ensaiado.
 - [x] [codex] `de7cc81`, `manifests/m2-runbook.md`: comando passava TAR Odin como conteúdo BOOT no Heimdall; teste só buscava palavras → imagem crua + teste do comando e equivalência do payload, corrigidos em `e28e769`. Transporte no telefone permanece pendente.
 - [ ] [claude] revisão de `019c589..faa2c16` (17/11/2026): aprovada. Reproduzido no computador: build 17/17, instalador 10/10, flash simulado 18/18, artefatos 56/56; Mesa `-2` com SHA `4a62c5a3…`, `depend = spirv-tools` e `NEEDED libSPIRV-Tools.so`; `r8s-ram.img` 65.513.472 B. Conferido no Omarchy do host: o hook `omarchy-update-pacman-guard` aceita `OMARCHY_ALLOW_DIRECT_PACMAN=1`, `omarchy-system-lock` existe e não bloqueia, e `/etc/os-release` não pertence a pacote (`/usr/lib/os-release` vem de `filesystem`). Pendente: `adb_require_single_root_device` exige `ro.product.model=SM-G780F` e `ro.product.device=r8s`, valores não lidos no LineageOS Recovery. Se forem outros, `flash-boot.sh`/`restore-stock.sh` recusam (falha segura). Ação: ler `getprop` no recovery antes de depender desses scripts.
