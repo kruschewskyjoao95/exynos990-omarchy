@@ -7,6 +7,16 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
 - [gemini] build M1 (lk3rd/kernel) via `packaging/build-env/`. Arquivos: `packaging/build-env/`, `out/`, `logs/`
 
+## A fazer
+
+Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/00](roadmap/00-roadmap.md#ordem-de-execução-e-entregas).
+
+1. [gemini] Terminar kernel + initramfs slim + `r8s-ram.img` (teste em RAM), com o limite de 64 MiB da seção Revisão.
+2. [gemini] **Não** rodar `build-m1-rootfs.sh rootfs` (Debian completo): fora do plano desde 17/11/2026. Manter só `build_slim`.
+3. [gemini] Novo builder do rootfs Arch ARM mínimo (`ufs-root.img` ≤ 700 MiB): `base`, `archlinuxarm-keyring`, systemd, `networkmanager`, `openssh`, `sudo`, `e2fsprogs`; módulos do kernel M1; firmware QCA6390; `r8s-usb-gadget` + IP fixo `10.42.0.2`; `r8s-growroot`; usuário comum com SSH por chave. Pacotes e versões de `manifests/packages-aarch64-stable.tsv`, sem kernel genérico `linux-*`.
+4. [gemini] Receita de instalação do Omarchy pós-boot (`[omarchy]` stable + `omarchy-keyring`, conforme `manifests/packages-aarch64.md`), sem rodar o instalador de PC (disco/ISO/bootloader).
+5. [claude] Revisar 3 e 4 contra `sources/port/tools/build-rootfs.sh` e `build-ufs-image.sh` (serviços r8s que precisam existir no Arch).
+
 ## Feito, aguardando revisão
 
 <!-- - [agente] commit <sha>: resumo -->
@@ -27,6 +37,9 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 - [ ] [claude] `packaging/build-env/build-m1-rootfs.sh` está fora do git e fora do quadro. Registrar em "Em andamento" e fazer commit ao concluir.
 
 ## Decisões do proprietário
+
+- [x] 17/11/2026: sem rootfs Debian completo. Teste em RAM com initramfs slim → Arch ARM mínimo gravado → Omarchy via `pacman`. Ver `roadmap/00`.
+- [x] 17/11/2026: LineageOS 24.0 foi instalado pelo proprietário com ajuda do Gemini.
 
 - [ ] Backup de `efs`/`sec_efs` (IMEI): sem `adb root` não há cópia, e o firmware stock não restaura essas partições. Opções: obter root para copiar antes do primeiro flash, ou aceitar o risco por escrito. O port não grava essas partições (`sources/port/tools/restore-stock.sh`, lista de nunca gravar).
 - Escrita no telefone segue a regra 5 de [AGENTS.md](AGENTS.md#trabalho-com-mais-de-um-agente).

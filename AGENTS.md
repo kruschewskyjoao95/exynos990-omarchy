@@ -12,7 +12,7 @@ Objetivo: instalar um sistema nativo derivado do Omarchy no Samsung **SM-G780F /
 ## Decisões da implementação
 
 - Rota principal: boot/kernel/DTB/Mesa do port r8s + rootfs Arch Linux ARM + ambiente real do Omarchy adaptado. Há um kernel em execução; dependências e módulos pertencem à compilação selecionada.
-- Debian é a referência temporária para reproduzir o port. A entrega final inclui shell, comandos e sessão do Omarchy; apenas copiar temas não conclui o objetivo.
+- Sem rootfs Debian completo (decisão do proprietário, 17/11/2026): Debian entra só no initramfs slim do teste em RAM; o rootfs gravado é Arch ARM mínimo, e o Omarchy é instalado por `pacman` depois. Sequência em [roadmap](roadmap/00-roadmap.md#ordem-de-execução-e-entregas). A entrega final inclui shell, comandos e sessão do Omarchy; apenas copiar temas não conclui o objetivo.
 - LineageOS é fonte de implementação e investigação por recurso. Uma base Android com Halium/libhybris é uma rota alternativa, com validação própria; não é uma etapa obrigatória da rota principal.
 - Construa o sistema em diretório de staging/ambiente isolado. O Omarchy instalado no computador é referência de leitura, não o destino do trabalho.
 - Preserve o boot Samsung e os drivers já funcionais ao integrar o userspace. A ISO e o particionamento para computadores não são o mecanismo escolhido para o telefone.
