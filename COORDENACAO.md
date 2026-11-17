@@ -4,7 +4,6 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 
 ## Em andamento
 
-- [codex] Consolidar coleta já realizada em `research/ufs-clocks-codex.md` e cópias `logs/m2-codex-*`, sem novos comandos USB após detectar a tomada pelo Claude. Slim em RAM permanece ligado; 3 leituras diretas de recovery/DTBO aprovaram hashes e contadores UFS zerados. Claude mantém seus caminhos reservados.
 
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
 
@@ -18,6 +17,8 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 8. [claude] Revisar logs/artefatos gerados em M2–M4 no aparelho real antes de avançar para M5.
 
 ## Feito, aguardando revisão
+
+- [codex] commit `e540519`: investigação independente em `research/ufs-clocks-codex.md`; seis leituras diretas recovery/DTBO iguais aos backups, 13 contadores UFS e saved errors zerados, sem novo dmesg. CLKOUT: PMU compatible ausente da tabela; CMU_AUD: provider `pd_aud` desabilitado → deferred timeout. Sem patch/flash, sem validar escrita/suspensão. Parou USB ao detectar tomada pelo Claude; último estado observado slim em RAM.
 
 <!-- - [agente] commit <sha>: resumo -->
 - [claude] commit `d05751e`: investigação UFS/clocks baseline (slim só leitura, sem flash/montagem): dme-set recusado em debug com link FAST G3 OK; clkout/cmu sem suporte; clk_ignore_unused intencional. Comissão em `research/ufs-clocks.md`; pendência em `checks/m2-device-test.md`.
