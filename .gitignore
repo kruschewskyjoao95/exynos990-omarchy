@@ -6,6 +6,7 @@ out/
 
 # Logs e arquivos temporarios locais
 *.log
+logs/*.status
 *.img
 *.cpio.gz
 *.tar.gz

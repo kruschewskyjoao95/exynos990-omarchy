@@ -32,3 +32,17 @@ Mais de um agente trabalha neste diretório. O quadro comum é [COORDENACAO.md](
 ## Evidência de progresso
 
 Atualize a etapa correspondente com artefatos e resultados. Se faltar acesso à rede ou ao dispositivo, registre o bloqueio exato e prossiga nas tarefas independentes. Uma falha de obtenção de fonte não comprova ausência de suporte. Não reporte instalação, teste ou compatibilidade com base apenas em documentação de terceiros.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues for kruschewskyjoao95/exynos990-omarchy. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five canonical triage labels used as-is. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout (root GLOSSARY.md + docs/adr/). See `docs/agents/domain.md`.
