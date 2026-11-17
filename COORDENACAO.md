@@ -5,22 +5,20 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 ## Em andamento
 
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
-- [gemini] build M1 (lk3rd/kernel) via `packaging/build-env/`. Arquivos: `packaging/build-env/`, `out/`, `logs/`
+- (livre; aguardando revisão do item 5 por `[claude]` e autorização do proprietário antes de qualquer escrita em M2)
 
 ## A fazer
 
 Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/00](roadmap/00-roadmap.md#ordem-de-execução-e-entregas).
 
-1. [gemini] Terminar kernel + initramfs slim + `r8s-ram.img` (teste em RAM), com o limite de 64 MiB da seção Revisão.
-2. [gemini] **Não** rodar `build-m1-rootfs.sh rootfs` (Debian completo): fora do plano desde 17/11/2026. Manter só `build_slim`.
-3. [gemini] Novo builder do rootfs Arch ARM mínimo (`ufs-root.img` ≤ 700 MiB): `base`, `archlinuxarm-keyring`, systemd, `networkmanager`, `openssh`, `sudo`, `e2fsprogs`; módulos do kernel M1; firmware QCA6390; `r8s-usb-gadget` + IP fixo `10.42.0.2`; `r8s-growroot`; usuário comum com SSH por chave. Pacotes e versões de `manifests/packages-aarch64-stable.tsv`, sem kernel genérico `linux-*`.
-4. [gemini] Receita de instalação do Omarchy pós-boot (`[omarchy]` stable + `omarchy-keyring`, conforme `manifests/packages-aarch64.md`), sem rodar o instalador de PC (disco/ISO/bootloader).
 5. [claude] Revisar 3 e 4 contra `sources/port/tools/build-rootfs.sh` e `build-ufs-image.sh` (serviços r8s que precisam existir no Arch).
 
 ## Feito, aguardando revisão
 
 <!-- - [agente] commit <sha>: resumo -->
-- (vazio; o baseline `fafb664` já foi revisado, achados abaixo)
+- [gemini] commit `80667fc`: itens 1 e 2 concluídos — kernel `6.12.0-rc5-next-20241104-r8s` + `exynos990-r8s.dtb` + módulos, `initramfs-slim.cpio.gz` (Debian slim RAM-only, sem Debian completo), `r8s-ufs.img` (`27.785.216` B) e `r8s-ram.img` (`65.509.376` B ≤ `64 MiB`).
+- [gemini] commit `5cfb7c3`: item 3 concluído — `packaging/build-env/build-arch-rootfs.sh` gera `out/rootfs/ufs-root.img` (`734.003.200` B / `700 MiB`, `610M` usados, `e2fsck -fn` ok), 160 pacotes `aarch64` sem `linux-*`, módulos + QCA6390 + `r8s-usb-gadget` (`10.42.0.2/24`) + `r8s-growroot` + `r8s-charge-limit` + `r8s-netwatch` + usuário `r8s` com SSH apenas por chave.
+- [gemini] commit `7e9cb19`: item 4 concluído — `packaging/omarchy/install-omarchy-r8s.sh` configura `[omarchy]` stable antes de `[core]`/`[extra]`, valida `omarchy-keyring` por SHA-256 + PGP, bloqueia `linux-*`/`limine*`/`mkinitcpio*`, instala Omarchy + `foot`/`firefox`/`squeekboard` e adiciona glue `r8s` (`AQ_DRM_DEVICES`, `PAN_MESA_DEBUG=noafbc`, `r8s-unbind-fbcon`, `r8s-thermal-trip`, `r8s-recovery-vt`, overrides Lua em `~/.config/hypr/`).
 
 ## Revisão
 
@@ -31,10 +29,10 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 - [x] [claude] `logs/m1-build-lk3rd.log`: build do lk3rd falha em `lib/gpt/pit.c` com `bits/wordsize.h: No such file or directory` (headers x86 de `/usr/include` com compilador aarch64). Provável falta de `libc6-dev-arm64-cross` no `Dockerfile.kbuild`, ou usar o toolchain que `sources/lk3rd/scripts/` baixa. Hipótese, não testada. Resolvido pelo gemini: `out/boot/lk3rd-r8s.img` gerado às 00:26.
 - [x] [claude] `checks/test-flash-tools.sh`: 11/11 PASS (testado no computador, `adb` simulado). Correção de `restore-stock.sh` (hash ausente era ignorado no original do port) observada no código.
 - [x] [claude] `packaging/host-tools/*.sh`: exigem `adb root`, mas o aparelho conectado dá `id -u` = 2000 e `ro.debuggable=0` (lido em 17/11/2026, só leitura). Os scripts não servem no estado atual; documentar em `roadmap/05` qual caminho de gravação vale agora (Download/heimdall ou fastboot do lk3rd, conforme `sources/port/docs/FLASHING.md`). Falso alarme: o gemini gerou `lk3rd-r8s.tar` para Download mode, e `roadmap/05` (linhas 11 e 115) já registra a exigência de root. Sem `adb root`, a volta ao stock é pelo Download mode, não por `restore-stock.sh`.
-- [ ] [claude] `packaging/build-env/build-m1-kernel.sh` (`package_uniloader`): nada impede `r8s-ram.img` maior que 64 MiB. O lk3rd copia a imagem do `fastboot boot` para um buffer de 64 MiB sem checar o tamanho (`sources/lk3rd/app/exynos_boot/boot/mainline_boot.c:193-194`, observado no código). O port também não checa. Ação: abortar se `stat -c%s r8s-ram.img` > 67108864. Não editei: o script estava em execução.
-- [ ] [claude] `packaging/build-env/build-m1-rootfs.sh`: senha root padrão `r8slab` + `PermitRootLogin yes` + `PasswordAuthentication yes`, com Wi-Fi via NetworkManager: SSH root com senha conhecida em qualquer rede em que o telefone entrar. Herdado do port; aceitável só em M2 em rede confiável. Ação: exigir `ROOTPW` sem valor padrão, ou SSH só por chave; já é requisito de M5 em `roadmap/00`.
-- [ ] [claude] `packaging/build-env/build-m1-rootfs.sh` (`build_slim`): remove módulos depois do `depmod`, então `modules.dep` lista arquivos apagados. Herdado do port (`sources/port/tools/build-slim-initramfs.sh:87-88`). Ação: rodar `depmod -b "$W" "$KVER"` de novo após os `rm`.
-- [ ] [claude] `packaging/build-env/build-m1-rootfs.sh` está fora do git e fora do quadro. Registrar em "Em andamento" e fazer commit ao concluir.
+- [x] [claude] `packaging/build-env/build-m1-kernel.sh` (`package_uniloader`): nada impede `r8s-ram.img` maior que 64 MiB. O lk3rd copia a imagem do `fastboot boot` para um buffer de 64 MiB sem checar o tamanho (`sources/lk3rd/app/exynos_boot/boot/mainline_boot.c:193-194`, observado no código). O port também não checa. Ação: abortar se `stat -c%s r8s-ram.img` > 67108864. Não editei: o script estava em execução. Resolvido em `80667fc` (trava > 67108864 + correção para não empacotar `ramdisk` duplicado no `mkbootimg`).
+- [x] [claude] `packaging/build-env/build-m1-rootfs.sh`: senha root padrão `r8slab` + `PermitRootLogin yes` + `PasswordAuthentication yes`, com Wi-Fi via NetworkManager: SSH root com senha conhecida em qualquer rede em que o telefone entrar. Herdado do port; aceitável só em M2 em rede confiável. Ação: exigir `ROOTPW` sem valor padrão, ou SSH só por chave; já é requisito de M5 em `roadmap/00`. Resolvido em `80667fc` (`ROOTPW` obrigatório sem default; rootfs Debian completo removido).
+- [x] [claude] `packaging/build-env/build-m1-rootfs.sh` (`build_slim`): remove módulos depois do `depmod`, então `modules.dep` lista arquivos apagados. Herdado do port (`sources/port/tools/build-slim-initramfs.sh:87-88`). Ação: rodar `depmod -b "$W" "$KVER"` de novo após os `rm`. Resolvido em `80667fc` (`depmod -b` após limpeza).
+- [x] [claude] `packaging/build-env/build-m1-rootfs.sh` está fora do git e fora do quadro. Registrar em "Em andamento" e fazer commit ao concluir. Resolvido em `80667fc`.
 
 ## Decisões do proprietário
 
