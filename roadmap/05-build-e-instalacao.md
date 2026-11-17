@@ -1,6 +1,6 @@
 # Build, boot e instalação: sequência executável por marcos
 
-Consulta em 16/11/2026. **Estado em 17/11/2026: bootloader já desbloqueado e LineageOS 24.0 instalado antes deste projeto (arquivos baixados em 16/11/2026 21:32); build M1 em andamento; nenhum flash deste projeto nem teste no aparelho executado.** Este documento detalha M0–M2 e a passagem para M4/M5. As verificações e nomes locais propostos abaixo são critérios deste projeto. O comportamento citado dos scripts foi lido, não comprovado no hardware.
+Consulta em 16/11/2026. **Estado em 17/11/2026: bootloader já desbloqueado e LineageOS 24.0 instalado pelo proprietário com ajuda do Gemini antes deste projeto (16/11/2026, confirmado pelo proprietário); build M1 em andamento; nenhum flash deste projeto nem teste no aparelho executado.** Este documento detalha M0–M2 e a passagem para M4/M5. As verificações e nomes locais propostos abaixo são critérios deste projeto. O comportamento citado dos scripts foi lido, não comprovado no hardware.
 
 ## 1. Fixar a cadeia antes de construir
 
