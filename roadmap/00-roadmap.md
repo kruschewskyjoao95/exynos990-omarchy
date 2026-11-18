@@ -25,7 +25,7 @@ As metas de teste abaixo são critérios propostos para este projeto, não garan
 **Decisão do proprietário (17/11/2026): sem rootfs Debian completo.** O kernel do port serve às duas bases; só o rootfs muda. Sequência:
 
 1. **Computador, em paralelo:** kernel/DTB/módulos, lk3rd, uniLoader, initramfs slim (Debian) e rootfs Arch ARM mínimo (≤ 700 MiB, cabe no buffer de 768 MiB do lk3rd).
-2. **Teste em RAM** (`fastboot boot`, nada gravado): tela, toque e console USB com o initramfs slim. Confirma o kernel isoladamente.
+2. **Teste em RAM** (`fastboot boot`, nada gravado por esse comando): tela, toque e console USB com o initramfs slim. A preparação anterior do lk3rd altera o boot persistentemente; usar imagem crua com Heimdall ou pacote TAR com Odin, conforme [runbook M2](../manifests/m2-runbook.md). Confirma o kernel isoladamente.
 3. **Gravar o Arch mínimo** em `userdata`; o primeiro boot expande a partição (`r8s-growroot`).
 4. **Instalar o Omarchy via `pacman`** sobre o Arch comprovado. O desktop (~1,4 GiB instalado, ver [pacotes](../manifests/packages-aarch64.md)) não cabe na imagem de flash.
 
@@ -36,9 +36,9 @@ Fontes e receitas de M1 podem avançar enquanto M0 depende do aparelho. A análi
 ## M0 — Inventário e recuperação
 
 - [x] Registrar Android/ROM atual, versão do bootloader, armazenamento, estado de desbloqueio, acesso a recovery/Download e disponibilidade de root. Modelo já confirmado; não presumir os demais itens. Evidência: [inventário](03-primeira-sessao.md#inventário-atualizado-em-17112026), 17/11/2026 (LineageOS 24.0, bootloader `G780FXXSOFYJ2` desbloqueado, sem `adb root`).
-- [ ] Copiar dados pessoais para fora do telefone e verificar amostras restauradas. Inventário registra "sem dados pessoais a preservar"; falta confirmação do proprietário.
+- [x] Dados pessoais: proprietário confirmou nesta sessão que formatou o telefone ontem e não há dados pessoais a preservar (17/11/2026).
 - [x] Obter firmware stock correspondente e registrar ferramentas e procedimento de recuperação aplicáveis ao estado atual. Evidência: firmware `G780FXXSOFYJ2` (`ZTO`) via `samloader`, hashes em [sources.md](../manifests/sources.md); Download mode registrado no inventário.
-- [x] Obter backups necessários por método compatível com os privilégios disponíveis; registrar tamanhos e SHA-256. Não considerar um backup dentro do telefone suficiente. Evidência: 17/11/2026, 8 partições (inclui `efs`/`sec_efs`/`cpefs`) lidas pelo adb root do LineageOS Recovery, hashes conferidos no aparelho, `backups/stock-backup-verify.txt`. Cópia externa pendente com o proprietário.
+- [x] Obter backups necessários por método compatível com os privilégios disponíveis; registrar tamanhos e SHA-256. Evidência: 8 partições lidas pelo adb root do LineageOS Recovery, hashes em `backups/stock-backup-verify.txt`. Cópia externa de todos os 23 arquivos concluída no HD USB Dados em 17/11/2026, com comparação SHA-256 de todos os arquivos e manifesto original 10/10 OK: [m0-external-backup.md](../checks/m0-external-backup.md).
 - [ ] Inspecionar as fontes de flash e restauração antes de qualquer execução; não usar endereços de partição copiados sem conferir o aparelho. Parcial no computador: `checks/test-flash-tools.sh` (11/11 PASS simulado), `packaging/host-tools/m2-preflight.sh` (leitura de `heimdall`/`fastboot`/`adb`/`samloader` e stock `G780FXXSOFYJ2`) e mapa `/dev/block/by-name/` já inventariado (`boot` → `sda13`, `userdata` → `sda32`); execução real via Download mode (`lk3rd-r8s.tar`) + `fastboot` pendente no aparelho.
 
 **Entrega:** inventário e plano de recuperação. **Aprovação:** artefatos acessíveis no computador e modo de recuperação alcançável. A restauração completa será validada no ciclo de instalação; só entrar nesse ciclo aceitando a perda de dados e efeitos irreversíveis descritos pelo port.
@@ -61,11 +61,13 @@ Fontes e receitas de M1 podem avançar enquanto M0 depende do aparelho. A análi
 
 ## M2 — Reproduzir o Linux básico no aparelho
 
+**Sessão física (17/11/2026, codex):** backup externo verificado; lk3rd instalado por ADB root, readback aprovado e fastboot confirmado. Mini e slim iniciaram Linux AArch64 em RAM; console USB funcional, nenhuma UFS montada; slim com systemd `running`, 0 unidades falhadas. Touchscreen e DRM registrados, sem teste funcional de toque/compositor. Há timeouts Bluetooth e avisos de UFS/clocks a investigar. O lk3rd separou a GPT: `sda13=lk3rd/2 MiB`, `sda33=boot/57 MiB`, `userdata=sda32` preservado. Nenhum rootfs gravado; M2 completo ainda pendente. Evidência: [m2-device-test.md](../checks/m2-device-test.md). Os registros anteriores de "sem aparelho" são históricos.
+
 **Preparação offline adicional (17/11/2026, codex):** empacotamento agora rejeita kernel/DTB/módulos com hash divergente e slim sem registro de procedência ou de outro build, mesmo com release igual. O slim deve ser regenerado pela receita para produzir `initramfs-slim.kernel.sha256`; nenhum registro foi retroativamente criado para os artefatos atuais. Inspeção ELF do pacote Mesa existente encontrou dependência runtime `libSPIRV-Tools.so`; receita corrigida (`pkgrel=2`, `depends=spirv-tools`) e pacote `mesa-g77-*-2` regenerado (17/11/2026). Testes de build: 17/17; instalador: 6/6; flash simulado: 18/18; integridade dos artefatos existentes: 55/55. Isso não conclui o build integral da série nem os testes físicos.
 
-- [ ] Preparar lk3rd pelo procedimento compatível com o estado inventariado em M0.
-- [ ] Após essa preparação, testar kernel e initramfs em RAM; confirmar que esse teste não monta armazenamento em escrita. Instalar lk3rd anteriormente já é uma alteração persistente.
-- [ ] Recolher logs de boot e testar console de recuperação antes de instalar o rootfs.
+- [x] Preparar lk3rd pelo procedimento compatível com M0: ADB root no Recovery, upload e readback verificados em 17/11/2026; fastboot do lk3rd confirmado. GPT separada automaticamente pelo loader, conforme [evidência](../checks/m2-device-test.md).
+- [x] Testar kernel/initramfs em RAM: mini e slim iniciaram, consoles responderam, nenhuma partição UFS montada. Instalação do lk3rd e ajuste da GPT anteriores foram persistentes.
+- [x] Recolher logs e testar console USB de diagnóstico antes de instalar o rootfs. Logs em `logs/m2-*`; recuperação completa da ROM ainda pendente.
 - [ ] Instalar o rootfs Arch ARM mínimo em `userdata` apenas no ciclo de instalação planejado; validar o destino real antes da gravação.
 - [ ] Registrar cinco boots consecutivos, rede, toque, renderização, alimentação e temperaturas em repouso e durante 30 minutos de carga controlada.
 - [ ] Guardar uma imagem conhecida como funcional e testar retorno a ela.
