@@ -1,0 +1,82 @@
+From: linuxs20fe maintainers
+Subject: [PATCH] r8s: avoid unsupported UFS sync override and unavailable clock providers
+
+Exynos990 rejects the legacy OV_TM/RX_SYNC_MASK_LENGTH sequence on the
+physical r8s. Keep its PHY calibration and HS negotiation, but opt this SoC
+out of the rejected sequence. This does not validate write endurance or PM.
+Disable CMU_AUD alongside its deliberately disabled power domain. Do not
+instantiate CLKOUT for the unsupported exynos850 PMU compatible; keep OF
+children (including poweroff) and other PMUs unchanged.
+
+---
+diff --git a/drivers/ufs/host/ufs-exynos.h b/drivers/ufs/host/ufs-exynos.h
+--- a/drivers/ufs/host/ufs-exynos.h
++++ b/drivers/ufs/host/ufs-exynos.h
+@@ -241,6 +241,7 @@
+ #define EXYNOS_UFS_OPT_SKIP_CONFIG_PHY_ATTR	BIT(5)
+ #define EXYNOS_UFS_OPT_UFSPR_SECURE		BIT(6)
+ #define EXYNOS_UFS_OPT_TIMER_TICK_SELECT	BIT(7)
++#define EXYNOS_UFS_OPT_SKIP_SYNC_PATTERN_MASK	BIT(8)
+ };
+ 
+ #define for_each_ufs_rx_lane(ufs, i) \
+diff --git a/drivers/ufs/host/ufs-exynos.c b/drivers/ufs/host/ufs-exynos.c
+--- a/drivers/ufs/host/ufs-exynos.c
++++ b/drivers/ufs/host/ufs-exynos.c
+@@ -762,6 +762,10 @@
+ 	mask = exynos_ufs_calc_time_cntr(ufs, sync_len);
+ 	mask = (mask >> 8) & 0xff;
+ 
++	/* Embedded Exynos990 rejects this legacy override and lane attribute. */
++	if (ufs->opts & EXYNOS_UFS_OPT_SKIP_SYNC_PATTERN_MASK)
++		return;
++
+ 	exynos_ufs_enable_ov_tm(hba);
+ 
+ 	for_each_ufs_rx_lane(ufs, i)
+@@ -2116,7 +2120,8 @@
+ 	.opts			= EXYNOS_UFS_OPT_BROKEN_AUTO_CLK_CTRL |
+ 				  EXYNOS_UFS_OPT_UFSPR_SECURE |
+ 				  EXYNOS_UFS_OPT_SKIP_CONFIG_PHY_ATTR |
+-				  EXYNOS_UFS_OPT_TIMER_TICK_SELECT,
++				  EXYNOS_UFS_OPT_TIMER_TICK_SELECT |
++				  EXYNOS_UFS_OPT_SKIP_SYNC_PATTERN_MASK,
+ 	.drv_init		= exynosauto_ufs_drv_init,
+ 	.pre_link		= exynos990_ufs_pre_link,
+ };
+diff --git a/arch/arm64/boot/dts/exynos/exynos990-r8s.dts b/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
+--- a/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
++++ b/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
+@@ -402,6 +402,11 @@
+  * SError in the noirq stage. Re-enable together with the audio work.
+  */
+ &pd_aud {
++	status = "disabled";
++};
++
++/* Its AUD power-domain provider is disabled above. */
++&cmu_aud {
+ 	status = "disabled";
+ };
+ 
+diff --git a/drivers/soc/samsung/exynos-pmu.c b/drivers/soc/samsung/exynos-pmu.c
+--- a/drivers/soc/samsung/exynos-pmu.c
++++ b/drivers/soc/samsung/exynos-pmu.c
+@@ -382,10 +382,13 @@
+ 
+ 	platform_set_drvdata(pdev, pmu_context);
+ 
+-	ret = devm_mfd_add_devices(dev, PLATFORM_DEVID_NONE, exynos_pmu_devs,
+-				   ARRAY_SIZE(exynos_pmu_devs), NULL, 0, NULL);
+-	if (ret)
+-		return ret;
++	/* clk-exynos-clkout has no support for this PMU (also used by r8s). */
++	if (!of_device_is_compatible(dev->of_node, "samsung,exynos850-pmu")) {
++		ret = devm_mfd_add_devices(dev, PLATFORM_DEVID_NONE, exynos_pmu_devs,
++					   ARRAY_SIZE(exynos_pmu_devs), NULL, 0, NULL);
++		if (ret)
++			return ret;
++	}
+ 
+ 	if (devm_of_platform_populate(dev))
+ 		dev_err(dev, "Error populating children, reboot and poweroff might not work properly\n");

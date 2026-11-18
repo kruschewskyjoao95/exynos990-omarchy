@@ -27,6 +27,7 @@ class KernelSets(unittest.TestCase):
         self.assertTrue(entries[0].startswith("0100-"))
         self.assertFalse(any(l.startswith("0101-") for l in entries))
         self.assertFalse(any(l.startswith("0106-") for l in entries))
+        self.assertIn("0107-r8s-ufs-sync-and-unavailable-clocks.patch", entries)
 
 
 if __name__ == "__main__":
