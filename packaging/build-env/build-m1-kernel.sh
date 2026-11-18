@@ -89,7 +89,7 @@ prepare_kernel_tree() {
   if [ "$PATCHSET" = series ]; then
     scripts/config -e DEVFREQ_THERMAL
     scripts/config -e MEDIA_SUPPORT -e MEDIA_PLATFORM_SUPPORT -e MEDIA_PLATFORM_DRIVERS -e VIDEO_DEV -e MEDIA_CONTROLLER
-    scripts/config -e REGULATOR_S2MPS22_ACPM -e PHY_EXYNOS990_MIPI_CSI -e VIDEO_EXYNOS990_CSIS
+    scripts/config -e REGULATOR_S2MPS22_ACPM -e PHY_EXYNOS990_MIPI_CSI -e VIDEO_EXYNOS990_CSIS -e VIDEO_S5K2LD
   fi
   make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
   REL=$(make -s ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- kernelrelease)

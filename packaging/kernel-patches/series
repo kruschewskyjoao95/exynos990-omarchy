@@ -14,3 +14,4 @@
 0113-media-samsung-add-exynos990-csis.patch
 0114-arm64-dts-exynos990-add-csis0.patch
 0115-media-samsung-exynos990-csis-wdma.patch
+0116-media-i2c-add-s5k2ld-and-hsi2c3.patch
