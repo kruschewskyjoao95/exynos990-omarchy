@@ -10,6 +10,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE = "0100-arm64-dts-exynos990-r8s-6gb-memory-map.patch"
+CLOCK_FIXES = "0107-r8s-ufs-sync-and-unavailable-clocks.patch"
 
 
 class BuildRecipes(unittest.TestCase):
@@ -27,7 +28,7 @@ class BuildRecipes(unittest.TestCase):
         for name in ("amss.bin", "m3.bin", "board-2.bin", "board-2.r8s.bin"):
             self.put(f"blobs/firmware/ath11k/QCA6390/hw2.0/{name}", "fixture")
         self.series = [BASELINE, "0102-gpu.patch", "0103-idle.patch",
-                       "0104-i2c.patch", "0105-suspend.patch"]
+                       "0104-i2c.patch", "0105-suspend.patch", CLOCK_FIXES]
         for name in self.series + ["0101-haptic.patch"]:
             self.put(f"packaging/kernel-patches/{name}", "fixture")
         self.put("packaging/kernel-patches/series", "# ordered\n\n" + "\n".join(self.series) + "\n")
@@ -83,7 +84,7 @@ esac
         result = self.run_recipe()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual((self.root / "trace").read_text().splitlines(),
-                         ["apply 0001-port.patch", f"apply {BASELINE}", "--set-str EXTRA_FIRMWARE "])
+                         ["apply 0001-port.patch", f"apply {BASELINE}", f"apply {CLOCK_FIXES}", "--set-str EXTRA_FIRMWARE "])
 
     def test_series_order_and_thermal_config(self):
         result = self.run_recipe(patchset="series")

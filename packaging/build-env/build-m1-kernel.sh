@@ -51,7 +51,7 @@ build_lk3rd() {
 
 prepare_kernel_tree() {
   echo "== [M1] Preparing & patching kernel 6.12.0-rc5 (r8s) =="
-  PATCHES=(0100-arm64-dts-exynos990-r8s-6gb-memory-map.patch)
+  PATCHES=(0100-arm64-dts-exynos990-r8s-6gb-memory-map.patch 0107-r8s-ufs-sync-and-unavailable-clocks.patch)
   if [ "$PATCHSET" = series ]; then
     mapfile -t PATCHES < /work/packaging/kernel-patches/series
   fi
