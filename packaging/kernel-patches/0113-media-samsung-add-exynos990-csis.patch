@@ -43,7 +43,7 @@ new file mode 100644
 index 000000000..000000000
 --- /dev/null
 +++ b/drivers/media/platform/samsung/exynos990-csis.c
-@@ -0,0 +1,200 @@
+@@ -0,0 +1,198 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Samsung Exynos 990 MIPI CSI-2 receiver (CSIS v5.2) V4L2 subdev driver
@@ -172,8 +172,7 @@ index 000000000..000000000
 +	csis->phy = devm_phy_get(dev, "csis_dphy");
 +	if (IS_ERR(csis->phy))
 +		return dev_err_probe(dev, PTR_ERR(csis->phy),
-+				     "failed to get csis_dphy
-+");
++				     "failed to get csis_dphy\n");
 +
 +	irq = platform_get_irq(pdev, 0);
 +	if (irq < 0)
@@ -202,8 +201,7 @@ index 000000000..000000000
 +	ret = pm_runtime_resume_and_get(dev);
 +	if (ret >= 0) {
 +		version = readl(csis->regs + CSIS_VERSION);
-+		dev_info(dev, "Exynos 990 CSIS version 0x%08x
-+", version);
++		dev_info(dev, "Exynos 990 CSIS version 0x%08x\n", version);
 +		pm_runtime_put(dev);
 +	}
 +

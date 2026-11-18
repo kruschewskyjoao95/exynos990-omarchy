@@ -12,3 +12,4 @@
 0111-phy-samsung-exynos990-mipi-csi.patch
 0112-arm64-dts-exynos990-add-mipi-csi0-phy.patch
 0113-media-samsung-add-exynos990-csis.patch
+0114-arm64-dts-exynos990-add-csis0.patch
