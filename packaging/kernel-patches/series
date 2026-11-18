@@ -9,3 +9,4 @@
 0108-r8s-s2mps22-acpm-regulator.patch
 0109-r8s-dts-s2mps22-regulators.patch
 0110-arm64-dts-exynos990-add-pd-csis.patch
+0111-phy-samsung-exynos990-mipi-csi.patch
