@@ -88,7 +88,7 @@ prepare_kernel_tree() {
   scripts/config --set-str EXTRA_FIRMWARE ""
   if [ "$PATCHSET" = series ]; then
     scripts/config -e DEVFREQ_THERMAL
-    scripts/config -e REGULATOR_S2MPS22_ACPM -e PHY_EXYNOS990_MIPI_CSI
+    scripts/config -e REGULATOR_S2MPS22_ACPM -e PHY_EXYNOS990_MIPI_CSI -e VIDEO_EXYNOS990_CSIS
   fi
   make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
   REL=$(make -s ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- kernelrelease)

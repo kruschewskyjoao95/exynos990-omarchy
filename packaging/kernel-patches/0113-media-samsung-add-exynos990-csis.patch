@@ -1,0 +1,246 @@
+From: Antigravity <antigravity@local>
+Subject: [PATCH] media: samsung: add exynos990 MIPI CSI-2 receiver driver
+
+Add a V4L2 subdev driver for the Exynos 990 CSIS v5.2 MIPI CSI-2
+receiver (0x17030000) wired to exynos990-mipi-csi-phy and pd_csis.
+
+Signed-off-by: Antigravity <antigravity@local>
+---
+ drivers/media/platform/samsung/Kconfig          |   9 ++
+ drivers/media/platform/samsung/Makefile         |   1 +
+ drivers/media/platform/samsung/exynos990-csis.c | 200 +++++++++++++++++++
+ 3 files changed, 210 insertions(+)
+ create mode 100644 drivers/media/platform/samsung/exynos990-csis.c
+
+diff --git a/drivers/media/platform/samsung/Kconfig b/drivers/media/platform/samsung/Kconfig
+index 000000000..000000000 100644
+--- a/drivers/media/platform/samsung/Kconfig
++++ b/drivers/media/platform/samsung/Kconfig
+@@ -8,3 +8,12 @@
+ source "drivers/media/platform/samsung/s5p-g2d/Kconfig"
+ source "drivers/media/platform/samsung/s5p-jpeg/Kconfig"
+ source "drivers/media/platform/samsung/s5p-mfc/Kconfig"
++
++config VIDEO_EXYNOS990_CSIS
++	tristate "Samsung Exynos 990 MIPI CSI-2 receiver driver"
++	depends on VIDEO_DEV && MEDIA_CONTROLLER
++	depends on ARCH_EXYNOS || COMPILE_TEST
++	select V4L2_FWNODE
++	help
++	  V4L2 subdevice driver for the Samsung Exynos 990 MIPI CSI-2
++	  receiver (CSIS v5.2).
+diff --git a/drivers/media/platform/samsung/Makefile b/drivers/media/platform/samsung/Makefile
+index 000000000..000000000 100644
+--- a/drivers/media/platform/samsung/Makefile
++++ b/drivers/media/platform/samsung/Makefile
+@@ -5,3 +5,4 @@
+ obj-y += s5p-g2d/
+ obj-y += s5p-jpeg/
+ obj-y += s5p-mfc/
++obj-$(CONFIG_VIDEO_EXYNOS990_CSIS) += exynos990-csis.o
+diff --git a/drivers/media/platform/samsung/exynos990-csis.c b/drivers/media/platform/samsung/exynos990-csis.c
+new file mode 100644
+index 000000000..000000000
+--- /dev/null
++++ b/drivers/media/platform/samsung/exynos990-csis.c
+@@ -0,0 +1,200 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Samsung Exynos 990 MIPI CSI-2 receiver (CSIS v5.2) V4L2 subdev driver
++ */
++
++#include <linux/interrupt.h>
++#include <linux/io.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/phy/phy.h>
++#include <linux/platform_device.h>
++#include <linux/pm_runtime.h>
++#include <media/media-entity.h>
++#include <media/v4l2-device.h>
++#include <media/v4l2-subdev.h>
++
++#define CSIS_VERSION		0x0000
++#define CSIS_CMN_CTRL		0x0004
++#define CSIS_CLK_CTRL		0x0008
++#define CSIS_INT_MSK0		0x0010
++#define CSIS_INT_SRC0		0x0014
++#define CSIS_INT_MSK1		0x0018
++#define CSIS_INT_SRC1		0x001c
++#define CSIS_ISP_CONFIG_CH0	0x0040
++#define CSIS_ISP_RESOL_CH0	0x0044
++
++#define CSIS_CMN_CTRL_CSI_EN		BIT(0)
++#define CSIS_CMN_CTRL_SW_RESET		BIT(1)
++#define CSIS_CMN_CTRL_LANE_NUM_SHIFT	8
++#define CSIS_CMN_CTRL_UPDATE_SHADOW	BIT(16)
++
++#define CSIS_PAD_SINK		0
++#define CSIS_PAD_SOURCE		1
++#define CSIS_PADS_NUM		2
++
++struct exynos990_csis {
++	struct device *dev;
++	void __iomem *regs;
++	struct phy *phy;
++	struct v4l2_subdev sd;
++	struct media_pad pads[CSIS_PADS_NUM];
++	struct v4l2_mbus_framefmt format;
++	u32 num_lanes;
++};
++
++static inline struct exynos990_csis *sd_to_csis(struct v4l2_subdev *sd)
++{
++	return container_of(sd, struct exynos990_csis, sd);
++}
++
++static irqreturn_t exynos990_csis_irq(int irq, void *priv)
++{
++	struct exynos990_csis *csis = priv;
++	u32 src0 = readl(csis->regs + CSIS_INT_SRC0);
++	u32 src1 = readl(csis->regs + CSIS_INT_SRC1);
++
++	if (src0)
++		writel(src0, csis->regs + CSIS_INT_SRC0);
++	if (src1)
++		writel(src1, csis->regs + CSIS_INT_SRC1);
++
++	return IRQ_HANDLED;
++}
++
++static int exynos990_csis_s_stream(struct v4l2_subdev *sd, int enable)
++{
++	struct exynos990_csis *csis = sd_to_csis(sd);
++	u32 val;
++	int ret;
++
++	if (enable) {
++		ret = pm_runtime_resume_and_get(csis->dev);
++		if (ret < 0)
++			return ret;
++
++		ret = phy_power_on(csis->phy);
++		if (ret) {
++			pm_runtime_put(csis->dev);
++			return ret;
++		}
++
++		writel(CSIS_CMN_CTRL_SW_RESET, csis->regs + CSIS_CMN_CTRL);
++		val = ((csis->num_lanes - 1) << CSIS_CMN_CTRL_LANE_NUM_SHIFT) |
++		      CSIS_CMN_CTRL_UPDATE_SHADOW | CSIS_CMN_CTRL_CSI_EN;
++		writel(val, csis->regs + CSIS_CMN_CTRL);
++		writel(0xffffffff, csis->regs + CSIS_INT_MSK0);
++	} else {
++		writel(0, csis->regs + CSIS_INT_MSK0);
++		val = readl(csis->regs + CSIS_CMN_CTRL);
++		val &= ~CSIS_CMN_CTRL_CSI_EN;
++		writel(val, csis->regs + CSIS_CMN_CTRL);
++		phy_power_off(csis->phy);
++		pm_runtime_put(csis->dev);
++	}
++
++	return 0;
++}
++
++static const struct v4l2_subdev_video_ops exynos990_csis_video_ops = {
++	.s_stream = exynos990_csis_s_stream,
++};
++
++static const struct v4l2_subdev_ops exynos990_csis_subdev_ops = {
++	.video = &exynos990_csis_video_ops,
++};
++
++static int exynos990_csis_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct exynos990_csis *csis;
++	int irq, ret;
++	u32 version;
++
++	csis = devm_kzalloc(dev, sizeof(*csis), GFP_KERNEL);
++	if (!csis)
++		return -ENOMEM;
++
++	csis->dev = dev;
++	csis->num_lanes = 4;
++	of_property_read_u32(dev->of_node, "data-lanes", &csis->num_lanes);
++
++	csis->regs = devm_platform_ioremap_resource(pdev, 0);
++	if (IS_ERR(csis->regs))
++		return PTR_ERR(csis->regs);
++
++	csis->phy = devm_phy_get(dev, "csis_dphy");
++	if (IS_ERR(csis->phy))
++		return dev_err_probe(dev, PTR_ERR(csis->phy),
++				     "failed to get csis_dphy
++");
++
++	irq = platform_get_irq(pdev, 0);
++	if (irq < 0)
++		return irq;
++
++	ret = devm_request_irq(dev, irq, exynos990_csis_irq, 0,
++			       dev_name(dev), csis);
++	if (ret)
++		return ret;
++
++	v4l2_subdev_init(&csis->sd, &exynos990_csis_subdev_ops);
++	csis->sd.owner = THIS_MODULE;
++	snprintf(csis->sd.name, sizeof(csis->sd.name), "exynos990-csis");
++	csis->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
++	csis->sd.dev = dev;
++
++	csis->pads[CSIS_PAD_SINK].flags = MEDIA_PAD_FL_SINK;
++	csis->pads[CSIS_PAD_SOURCE].flags = MEDIA_PAD_FL_SOURCE;
++	ret = media_entity_pads_init(&csis->sd.entity, CSIS_PADS_NUM, csis->pads);
++	if (ret)
++		return ret;
++
++	platform_set_drvdata(pdev, csis);
++	pm_runtime_enable(dev);
++
++	ret = pm_runtime_resume_and_get(dev);
++	if (ret >= 0) {
++		version = readl(csis->regs + CSIS_VERSION);
++		dev_info(dev, "Exynos 990 CSIS version 0x%08x
++", version);
++		pm_runtime_put(dev);
++	}
++
++	ret = v4l2_async_register_subdev(&csis->sd);
++	if (ret) {
++		pm_runtime_disable(dev);
++		media_entity_cleanup(&csis->sd.entity);
++		return ret;
++	}
++
++	return 0;
++}
++
++static void exynos990_csis_remove(struct platform_device *pdev)
++{
++	struct exynos990_csis *csis = platform_get_drvdata(pdev);
++
++	v4l2_async_unregister_subdev(&csis->sd);
++	pm_runtime_disable(&pdev->dev);
++	media_entity_cleanup(&csis->sd.entity);
++}
++
++static const struct of_device_id exynos990_csis_of_match[] = {
++	{ .compatible = "samsung,exynos990-csis" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, exynos990_csis_of_match);
++
++static struct platform_driver exynos990_csis_driver = {
++	.driver = {
++		.name = "exynos990-csis",
++		.of_match_table = exynos990_csis_of_match,
++	},
++	.probe = exynos990_csis_probe,
++	.remove = exynos990_csis_remove,
++};
++module_platform_driver(exynos990_csis_driver);
++
++MODULE_DESCRIPTION("Samsung Exynos 990 MIPI CSI-2 receiver driver");
++MODULE_LICENSE("GPL");
