@@ -12,6 +12,9 @@ egl-wayland
 foot
 firefox
 squeekboard
+fcitx5
+fcitx5-gtk
+fcitx5-qt
 brightnessctl
 xdg-user-dirs
 xdg-utils
