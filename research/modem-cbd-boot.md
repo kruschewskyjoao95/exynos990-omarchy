@@ -113,3 +113,15 @@ Transporte, achados no aparelho:
   - Com o doorbell `0x10000`, o readback foi `0x10000`, e `cp2ap_msg` passou de `0xc1` a `0xc8` (`CMD_PHONE_START`) 75–78 ms depois, em dois ensaios seguidos.
   - O CUSE com o doorbell `0x10000` também conduziu o boot inteiro: 26913 quadros, `cbd` rc 0.
 - **Próximo passo (proposta):** o `cmd_phone_start_handler()` chama `init_legacy_link()` (magic `0xaa`). Ele só envia `INIT_END` (`0xc2`) quando `rild_ready()` é verdadeiro, ou seja, com FMT (`umts_ipc0`, canal 235) e RFS (`umts_rfs0`, canal 245) abertos. Depois disso a pilha precisa de transporte SBD para RIL e RFS, e de PKTPROC para os dados. Registro na operadora e `rmnet` ainda não foram testados.
+
+### Operação normal: `INIT_END` e primeiras mensagens IPC (19/11/2026, kernel #18, sem flash)
+
+- **Testado neste aparelho:** depois do `PHONE_START`, `ipc-handshake.py` reproduz `init_legacy_link()`: zera o magic, o acesso e as filas legadas, depois grava magic `0xaa` e acesso `1`. Em seguida envia `INIT_END` (`0xc2`, doorbell `0x10000`).
+- **Resposta do CP:** 1,4 s depois, `cp2ap_msg` passou a `0x83` e o ponteiro de escrita do anel SBD DL do canal 235 (`umts_ipc0`, FMT) foi a 4, depois a 6 e a 10. O roteiro consumiu os dez quadros e avançou o ponteiro de leitura.
+- **Formato dos quadros:** cada um tem cabeçalho SIPC5 (`f8 eb <len16>`) seguido do cabeçalho IPC Samsung (`len16 mseq aseq main sub type`). Exemplos:
+  - `13 05 03 … "AST_POWERON\r\n"`;
+  - `01 01 03` (PWR / PHONE_PWR_UP / NOTI);
+  - `0d 0f 03`, `05 11 03`, `05 0c 03`, `05 10 03`, `05 07 03`, `01 07 03`.
+- **Campo de tamanho:** `buff_len_array` traz o canal nos bits 16–23 (`0x00eb001d` = canal 235, 29 B).
+- **Após 20 s:** `cp2ap_wakeup` ficou inativo, com `phone_active` ativo. Nenhum quadro apareceu no RFS (canal 245) nem nos canais de dados.
+- **Próximo passo (proposta):** responder às mensagens IPC (energia, SIM e rede) por um daemon nativo que use o transporte SBD. Referência: Scion `hakios.shannon.c` (MIT-0), que implementa a mesma família IPC no Shannon do Galaxy S9, com SIM, registro e PDP `0x0D`. Os dados virão depois, por PKTPROC.
