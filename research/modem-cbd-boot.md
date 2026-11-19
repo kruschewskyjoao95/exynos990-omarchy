@@ -59,3 +59,23 @@ service cpboot-daemon /vendor/bin/cbd -d -t s5100 -P by-name/radio -bs -me -B um
 IPC preparado como `init_legacy_link()`/`link_start_normal_boot()` (magic `BOOT`, `access=1`, filas zeradas), mais BOOT por SPI, link PCIe e doorbell `pcie_link_ack` (14). **O CP não escreveu nada em 6 s**: filas RX vazias e `cp2ap_msg` intacto. Coerente com o STD UDL, em que o AP fala primeiro (`std_udl_stage_start`). Para conhecer a primeira mensagem é preciso o comportamento do `cbd`.
 
 No `cbd`, as referências às strings ficam em `.rodata` com deslocamento entre arquivo e memória: `std_udl_req_resp` é referenciado em `0x16a8c` por `adrp 0x7000` + `#0xe40`. A análise estática é viável, mas longa.
+
+## Observação do `cbd` real (19/11/2026, kernel #17, sem flash)
+
+Ferramentas, todas em `packaging/modem/`:
+- `cuse-umts.c`: `/dev/umts_boot0` e `/dev/umts_ramdump0` em CUSE, com as ioctls do `cpif` mapeadas para GPIO, spidev, filas IPC por `/dev/mem`, `ap2cp_msg` + doorbell e `relink`. Faz trace hexadecimal em `/run/cbd-trace.log`.
+- `cbd-props.c`: `LD_PRELOAD` freestanding (sem libc, carrega no bionic) que responde `property_get`/`set`.
+- `cbd-observe.sh`: chroot Android com `system`, `vendor` e o APEX `com.android.runtime` montados ro a partir da `super`. RADIO e EFS entram como **cópias** em tmpfs (o `cbd` roda como `radio` e usaria O_RDWR).
+
+O que o `cbd` faz, observado:
+1. Espera `vendor.cbd.rfs_check_done` começar com `'1'` (50 × 100 ms, `0x1c640`).
+2. `NV validation done`, TOC com `max_stage: 7` e `build_std_dload_control` com estágios 0–5 (TOC, BOOT b_size 0x320, MAIN 0x2ee7360, APM, VSS e NV 0x100000).
+3. `POWER_ON` → `LOAD_CP_IMAGE` (`size=64400`, `m_off=b_off=mode=len=0`; a imagem começa por `2e 00 00 ea`, um branch ARM) → `START_CP_BOOTLOADER(mode 0)`.
+4. **Primeira mensagem STD UDL: `write(umts_boot0, 00 91 00 00)` (`0x9100`), esperando `0xA100`.** Sem resposta, desiste em ~30 s e recomeça.
+
+Transporte, achados no aparelho:
+- **O doorbell só responde no endereço de barramento `pci_db_addr = 0x14d60000`.** Com o BAR0 do EP em `0x14d60000` (readback `0x14d00004`), ler a CPU em `0x14060000` dá `0x0`. Em qualquer outro BAR0 (`0x14f00000`) ou em BAR0+0, dá `0xffffffff`, que é falha para o `s51xx_pcie_send_doorbell_int()`.
+- O Samsung desliga o BAR0/ROM do root port (`dbi+0x100010`/`0x100030 = 0`, `exynos_pcie_setup_rc()`), deixando a janela começar em `0x14000000` (barramento `0x14d00000`). No nosso kernel o BAR0 do root port ocupa essa faixa. **A corrigir no 0141/0142.**
+- O root port vinha com `BusMaster-`; ligado por `setpci`.
+- IOCC (`exynos_pcie_rc_set_iocc`) aplicado: DBI `0x8e8 = 0x10101010` e SYSREG_HSI2 `0x704 = 3`.
+- **Bloqueio atual:** mesmo com doorbell, `ap2cp_msg = 0x81`, Bus Master e IOCC, o CP **não consome a fila RAW TX** (`tail` em 0) e não escreve nada na IPC. Velocidade Gen4 ou Gen1 não muda. A hipótese seguinte (não testada) é que falta o MSI: o `exynos_pcie_rc_poweron()` inicializa o MSI do RC (`cp_msi_rmem` em `0xf6200000`) antes do uso. Também pode faltar outro passo do `rc_poweron()`/`s51xx_pcie` que informe ao CP onde fica a memória do AP.
