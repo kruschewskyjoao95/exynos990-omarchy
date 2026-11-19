@@ -42,6 +42,18 @@ O 0129 expõe parâmetros que valem a cada stream-on: `phy_exynos990_mipi_csi.{l
   - as fontes LDO5S e LDO6S;
   - `CMN_CTRL` (3 trios, VC_DT, sem descramble), `PHY_CMN_CTRL=0x1f`, LRTE e PACKED_PIXEL_MODE.
 
+## Sensor, MCLK e alimentação (kernels #10 e #11, 0130 `aae90d01…`)
+
+Leitura durante a captura, com `potf=1` e settle 7:
+
+- **MCLK:** `dout_cmu_cis_clk0` = 26.000.000 Hz, habilitado por `1-0010`, segundo o `clk_summary`.
+- **Sensor:** o contador de quadros (`0x0005`, lido por I2C) foi de 76 a 106 e a 137, com 1 s entre leituras. São **30 fps reais**. `0x0100=1`, PLL `0x156`, FLL `0x5824`, LLP `0x08e0`.
+- **CSIS no mesmo ensaio:** `vc0_frames=1820` em ~7 s (~260/s), cerca de 8,5 FS por quadro real. O único buffer entregue tinha dados só na linha 0 (2.009 bytes).
+- **PMIC (0130):** LDO5S `ctrl=0xcc` e LDO6S `ctrl=0xec`. Estão ligados e com `vsel` 0x0C (0,85 V) e 0x2C (1,8 V), já ajustados pelo bootloader.
+- **Ordem das fontes do PHY (0,85 V → 1 ms → 1,8 V):** três ensaios, mesmo padrão de erro (`vc0_frames` 573, 2236 e 5894; `int0=0xf000001b`).
+
+Ficam descartados como causa: a taxa e o MCLK do sensor, a tensão dos trilhos do PHY e a ordem de ligar as fontes.
+
 ## Próximo passo
 
 Medir o LineageOS em execução neste aparelho, com a câmera aberta: os registradores do PHY em `0x170D1300..0x170D17FF`, o bias em `0x170D1000`, `CSIS0` e `sysreg 0x17020500`. Depois, comparar com o #10 palavra por palavra. O código-fonte não mostra mais nenhuma diferença.
