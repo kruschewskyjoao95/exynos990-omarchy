@@ -72,3 +72,14 @@ Toda a configuração visível no código Samsung está confirmada no hardware. 
 ## Próximo passo
 
 Medir o LineageOS em execução neste aparelho, com a câmera aberta: os registradores do PHY em `0x170D1300..0x170D17FF`, o bias em `0x170D1000`, `CSIS0` e `sysreg 0x17020500`. Depois, comparar com o #10 palavra por palavra. O código-fonte não mostra mais nenhuma diferença.
+
+## Ordem de início sensor/CSIS (kernel #12, 0131 `a1040394…`)
+
+O 0131 expõe dois parâmetros: `order` (0 = A: CSIS/PHY → atraso → sensor; 1 = B: sensor → atraso → CSIS/PHY; 2 = C: CSIS/PHY → sensor → atraso → sensor desliga e religa) e `delay_ms`, com os valores 0, 1, 5, 10 e 50. Foram 15 ensaios, com `potf=1` e settle 7.
+
+- Todos os 15 mostram `int0=0xf000001b` e `vc0_frames` entre 600 e 12.956, ou seja, FS falsos.
+- Quatro entregaram um buffer: A/0, A/10, B/5 e B/10. Nos quatro só a **linha 0** tinha dados, entre 1.025 e 2.004 bytes, como já ocorria antes.
+- Nenhum quadro saiu limpo, e a variação entre os ensaios é aleatória.
+- Antes da primeira escrita, o PHY lê **tudo zero** (bias e SD0): não há estado deixado por firmware ou bootloader.
+
+Descartados: ordem e atraso entre o sensor e o receptor, e estado prévio do PHY.

@@ -29,3 +29,4 @@
 0128-r8s-camera-otf-path-at-533mhz.patch
 0129-r8s-camera-phy-potf-runtime-knobs.patch
 0130-r8s-camera-pmic-vsel-and-phy-supply-order.patch
+0131-r8s-camera-start-order-knobs-and-phy-defaults.patch
