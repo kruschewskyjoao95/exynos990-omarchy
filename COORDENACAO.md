@@ -22,6 +22,7 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 - ~~[gemini-swarm] Modem dados~~: parado por ordem do proprietário (19/11/2026); caminhos devolvidos ao [claude].
 
 - [claude] Continuação modem dados: portar bytes exatos libsec-ril (DataProfile 0x0D/0x1B, LTE attach 0x0D/0x14, Define 0x0D/0x01, SetPDP 0x0D/0x04, PsAttach 0x0D/0x03) para `packaging/modem/s5123-ril.py` e documentar em `research/modem-sec-ril-data.md` (diagnóstico "contexto desabilitado"). Herda caminhos do gemini-swarm por ordem do proprietário.
+- [claude] USB 3 SuperSpeed do r8s (pedido do proprietário, 19/11/2026): port do PHY SuperSpeed e DT para o USB-C. Caminhos: `research/usb3-r8s.md`, `packaging/kernel-patches/0145*`, `checks/usb3-*.md`. Sem gravar: testes só com `fastboot boot`.
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
 
 ## A fazer
