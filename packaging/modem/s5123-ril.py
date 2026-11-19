@@ -229,8 +229,105 @@ class Wakeup:
             log("PCIe off (CP may sleep)")
 
 
+class Data:
+    """rmnet0 (TUN) <-> the CP. UL: raw IP on the SBD ring of ch 10 (QOS_HIPRIO), buff_len = len | ch << 16, no
+    link header (sbd_pio_tx). DL: PKTPROC sktbuf descriptors (pktproc_get_pkt_from_sktbuf_mode); descriptor k
+    always owns cell k, refilled at fore as pktproc_fill_data_addr() does."""
+    CH = 10
+    CP_BASE, CELL, PAD = 0x28000000, 2048 + 512, 66
+
+    def __init__(self, link, st):
+        import fcntl
+        self.L, self.st = link, st
+        fd = os.open("/dev/mem", os.O_RDWR | os.O_SYNC)
+        self.pp = mmap.mmap(fd, hs.PP_SIZE, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE, offset=hs.PKTPROC)
+        os.close(fd)
+        self.num = struct.unpack_from("<I", self.pp, 8)[0]
+        self.done = 0
+        self.tun = os.open("/dev/net/tun", os.O_RDWR | os.O_NONBLOCK)
+        fcntl.ioctl(self.tun, 0x400454CA, struct.pack("16sH", b"rmnet0", 0x0001 | 0x1000))  # TUNSETIFF TUN|NO_PI
+        self.up = self.down = 0
+
+    def configure(self):
+        ip = "%d.%d.%d.%d" % tuple(self.st.ip4)
+        for cmd in (["ip", "addr", "flush", "dev", "rmnet0"], ["ip", "addr", "add", ip + "/32", "dev", "rmnet0"],
+                    ["ip", "link", "set", "rmnet0", "mtu", "1400", "up"],
+                    ["ip", "route", "replace", "default", "dev", "rmnet0", "metric", "900"]):
+            subprocess.run(cmd, check=True)
+        log("rmnet0 up (address from the CP), default route metric 900 (Wi-Fi keeps priority)")
+
+    def pump(self):
+        while True:                                      # UL: tun -> SBD
+            try:
+                pkt = os.read(self.tun, 2048)
+            except BlockingIOError:
+                break
+            if self.up < 12:
+                log("UL " + self.describe(pkt))
+            if self.send(pkt):
+                self.up += 1
+        r = lambda o: struct.unpack_from("<I", self.pp, o)[0]
+        rear = r(20)
+        got = False
+        while self.done != rear:                         # DL: PKTPROC -> tun
+            d = 0x100 + 16 * self.done
+            addr, ctl = struct.unpack_from("<IBB", self.pp, d)[0], 0
+            length, chan = struct.unpack_from("<H", self.pp, d + 8)[0], self.pp[d + 14]
+            off = addr - self.CP_BASE
+            if 0 < length <= 2048 and 0x100000 <= off and off + length <= hs.PP_SIZE and chan == self.CH:
+                start = off & ~3
+                end = (off + length + 3) & ~3
+                data = b"".join(self.pp[p:p + 4] for p in range(start, end, 4))
+                pkt = data[off - start:off - start + length]
+                try:
+                    os.write(self.tun, pkt)
+                    self.down += 1
+                except OSError:
+                    pass
+            else:
+                log("PKTPROC bad descriptor %d: len %d ch %d off %#x" % (self.done, length, chan, off))
+            fore = r(16)                                 # refill: descriptor fore gets its own cell back
+            struct.pack_into("<I", self.pp, 0x100 + 16 * fore, self.CP_BASE + 0x100000 + fore * self.CELL + self.PAD)
+            ctl = (0x80 if fore == 0 else 0) | (0x08 if fore == self.num - 1 else 0)
+            struct.pack_into("<I", self.pp, 0x100 + 16 * fore + 4, ctl << 8)   # data_addr_msb 0, control, status 0
+            struct.pack_into("<I", self.pp, 16, (fore + 1) % self.num)
+            self.done = (self.done + 1) % self.num
+            got = True
+        return got
+
+    @staticmethod
+    def describe(pkt):
+        if pkt[:1] and pkt[0] >> 4 == 4 and len(pkt) >= 20:
+            return "v4 proto %d len %d %d.x->%d.x" % (pkt[9], len(pkt), pkt[12], pkt[16])
+        if pkt[:1] and pkt[0] >> 4 == 6 and len(pkt) >= 40:
+            return "v6 next %d len %d" % (pkt[6], len(pkt))
+        return "? %d B %s" % (len(pkt), pkt[:8].hex())
+
+    def deliver(self, pkt):
+        if self.down < 12:
+            log("DL " + self.describe(pkt))
+        try:
+            os.write(self.tun, pkt)
+            self.down += 1
+        except OSError as e:
+            log("rmnet0 write: %s" % e)
+
+    def send(self, pkt):
+        L, i = self.L, LINK[11]                         # QOS_NORMAL ring (sbd_ch2rb); the tag says rmnet0
+        pos, lens, length = hs.RINGS[i, 0]
+        rp, wp = L.r16(i), L.r16(N + i)
+        if (wp + 1) % length == rp or len(pkt) > 2048:
+            return False
+        L.put(L.r32(pos + 4 * wp), pkt)
+        L.w32(lens + 4 * wp, len(pkt) | self.CH << 16)
+        L.w16(N + i, (wp + 1) % length)
+        L.tell(MSG_VALID | MSG_DATA)
+        return True
+
+
 class State:
-    sim = reg = tech = phone = None
+    sim = reg = reg_cs = reg_ps = tech = phone = pdp_state = ip4 = dns4 = None
+    last_result = None
     oper = ""
     dbm = bars = None
 
@@ -241,6 +338,7 @@ def on_fmt(st, m):
     g, ix, ty, d = m[4], m[5], m[6], m[7:]
     kind = {1: "ind", 2: "resp", 3: "noti"}.get(ty, "?")
     if g == 0x80 and len(d) >= 5:
+        st.last_result = (d[0], d[1], d[3] | d[4] << 8)
         log("<- general response to %02x %02x type %d: result %#x" % (d[0], d[1], d[2], d[3] | d[4] << 8))
     elif g == 0x01 and ix == 0x07 and d:
         st.phone = d[0]
@@ -253,8 +351,15 @@ def on_fmt(st, m):
         log("<- SIM %s: %s (%s)" % ("status" if ix == 1 else "card type", d.hex(),
             {0x00: "initialising", 0x80: "NO CARD", 0x82: "READY", 0x83: "phonebook ready"}.get(d[0] if d else -1,
                                                                                                "lock/other")))
+    elif g == 0x08 and ix == 0x05 and ty == 2:
+        pass                                            # our poll's answer: another layout, not the state
     elif g == 0x08 and ix == 0x05 and len(d) >= 3:
-        st.tech, st.reg = d[0], d[2]
+        if d[1] == 2:
+            st.reg_cs = d[2]
+        elif d[1] == 3:
+            st.reg_ps = d[2]
+        if d[1] in (2, 3) or st.reg is None:            # PS/CS domains; domain 0 is not a registration
+            st.tech, st.reg = d[0], d[2]
         log("<- REGISTRATION tech %d domain %d state %d (%s)" % (d[0], d[1], d[2], {1: "none", 2: "HOME",
             3: "SEARCHING", 4: "EMERGENCY ONLY", 5: "unknown", 6: "ROAMING"}.get(d[2], "?")))
     elif g == 0x08 and ix == 0x03:
@@ -269,6 +374,21 @@ def on_fmt(st, m):
         elif ix == 6:
             st.dbm = -d[0]
         log("<- SIGNAL %s bars=%s dbm=%s" % ("icon" if ix == 1 else "strength", st.bars, st.dbm))
+    elif g == 0x0D and ix == 0x10 and len(d) >= 2:
+        log("<- DATA CALL STATUS context %d status %d (%s) cause %#x [%s]" % (d[0], d[1], {0: "not enabled",
+            1: "ENABLED", 3: "disabled"}.get(d[1], "?"), d[2] if len(d) > 2 else 0, d.hex()))
+        st.pdp_state = d[1]
+    elif g == 0x0D and ix == 0x09:
+        if len(d) >= 3 + 8:
+            st.ip4, st.dns4 = bytes(d[3:7]), bytes(d[7:11])
+            log("<- DATA ADDRESS context %d flags %#x cause %#x: IPv4 %d.x.x.x, DNS %d.x.x.x" % (
+                d[0], d[1], d[2], d[3], d[7]))
+        else:
+            log("<- DATA ADDRESS %s, %d B" % (kind, len(d)))
+    elif g == 0x0D and ix in (0x0C, 0x0F):
+        log("<- DATA %02x %s, %d B: %s" % (ix, kind, len(d), d.hex()))
+    elif g == 0x0D and ty == 2 and ix not in (0x06, 0x09):
+        log("<- DATA %02x response, %d B: %s" % (ix, len(d), d[:48].hex()))   # diagnosis of the data group
     elif g == 0x0A and ix == 0x01 and ty == 2 and len(d) >= 33:
         txt = lambda b: b.split(b"\0")[0].decode("ascii", "replace")
         log("<- VERSION sw=%s hw=%s" % (txt(d[1:33]), txt(d[33:65]) if len(d) >= 65 else "?"))
@@ -364,6 +484,8 @@ def main():
     wake = Wakeup(L)
     L.wake = wake
     t_up, asked_normal, asked_ver, last_msg, last_snap = time.monotonic(), False, False, None, None
+    apn = os.environ.get("R8S_APN", "").encode()        # empty: no data call
+    data, step, step_t = None, 0, 0.0
     kick = float(os.environ.get("R8S_KICK_S", "0"))   # >0: an empty MSG_DATA doorbell this often (see research)
     poll = float(os.environ.get("R8S_POLL_S", "2"))   # registration GET this often: a UL frame lets the CP flush
     next_poll = 5.0
@@ -387,6 +509,8 @@ def main():
                 on_fmt(st, m[4:] if m[:1] == b"\xf8" else m)
             elif ch == CH_RFS:
                 rfs.on(m[4:] if m[:1] == b"\xf8" and not rfs.more else m)
+            elif ch in (10, 11) and data:
+                data.deliver(m)                         # DL on the multipdp SBD rings: raw IP, no link header
             else:
                 log("<- ch%d %d B" % (ch, len(m)))
         now = time.monotonic() - t_up
@@ -401,8 +525,60 @@ def main():
             for dev in ("0001:00:00.0", "0001:01:00.0"):
                 out = subprocess.run(["lspci", "-vv", "-s", dev], capture_output=True, text=True).stdout
                 log(dev, " | ".join(l.strip() for l in out.splitlines() if any(k in l for k in ("Control:", "Status:", "DevSta", "UESta", "CESta", "LnkSta:"))))
+        if apn and st.reg_ps in (2, 6) and step == 0 and now > 5:
+            # IpcProtocol41Data::IpcTxPsAttach: 10-byte message, data [attach 1, 0, 0]
+            st.last_result = None
+            L.fmt(0x0D, 0x03, 0x03, b"\x01\x00\x00")
+            step, step_t = -2, now
+        elif step == -2 and (st.last_result and st.last_result[:2] == (0x0D, 0x03) or now - step_t > 5):
+            log("PS attach result %s" % (hex(st.last_result[2]) if st.last_result else "none in 5 s"))
+            step = -3
+        elif apn and step == -3:
+            # IpcProtocol41Data::IpcTxDefinePdpContext: 149-byte message (142 B data): enable, cid, PDP type 2 (IP),
+            # APN from offset 3 (libsec-ril.so, read for the layout only)
+            d = bytearray(142)
+            d[0], d[1], d[2] = 1, 1, 2
+            d[3:3 + len(apn)] = apn
+            st.last_result = None
+            L.fmt(0x0D, 0x01, 0x03, bytes(d))             # define context 1 (Scion data_stage)
+            step, step_t = 1, now
+        elif step == 1 and st.last_result and st.last_result[:2] == (0x0D, 0x01):
+            log("context definition result %#x" % st.last_result[2])
+            ok = st.last_result[2] == 0x8000
+            st.last_result = None
+            if not ok:
+                step = -1
+            else:
+                # IpcProtocol41Data::IpcTxSetPdpContext: 248-byte message (241 B data): state 1 (activate), cid,
+                # u32 flags (bit0 user, bit1 password, bit4 auth), user[100] at 6, password[100] at 106, auth at 238
+                # (1 PAP, 2 CHAP)
+                d = bytearray(241)
+                d[0], d[1] = 1, 1
+                user, pw = os.environ.get("R8S_APN_USER", "").encode(), os.environ.get("R8S_APN_PASS", "").encode()
+                flags = (1 if user else 0) | (2 if pw else 0)
+                if user or pw:
+                    flags |= 0x10
+                    d[238] = 1
+                struct.pack_into("<I", d, 2, flags)
+                d[6:6 + len(user)], d[106:106 + len(pw)] = user, pw
+                L.fmt(0x0D, 0x04, 0x03, bytes(d))             # activate context 1
+                step, step_t = 2, now
+        elif step == 2 and st.last_result and st.last_result[:2] == (0x0D, 0x04):
+            log("activation result %#x" % st.last_result[2])
+            st.last_result = None
+            step, step_t = 3, now
+        elif step == 3 and not st.ip4 and now - step_t > 3 and not getattr(st, "asked_ip", False):
+            st.asked_ip = True
+            L.fmt(0x0D, 0x04, 0x02)                       # contexts' state
+            L.fmt(0x0D, 0x09, 0x02, b"\x01")              # IP configuration of context 1
+        elif step == 3 and st.ip4 and data is None:
+            data = Data(L, st)
+            data.configure()
+            step = 4
+        if data:
+            data.pump()
         if poll and online and now >= next_poll:
-            next_poll = now + poll
+            next_poll = now + (0.3 if data else poll)   # with data up: DL also waits for a UL frame
             L.fmt(0x08, 0x05, 0x02, quiet=True)
         if not asked_normal and now > 3:
             asked_normal = True
@@ -413,8 +589,11 @@ def main():
     for ch, m in L.receive():
         if ch == CH_FMT:
             on_fmt(st, m[4:] if m[:1] == b"\xf8" else m)
-    log("summary: sim=%s phone=%s reg=%s tech=%s operator=%s bars=%s dbm=%s" %
-        (st.sim, st.phone, st.reg, st.tech, st.oper or "?", st.bars, st.dbm))
+    if data:
+        i = LINK[11]
+        log("data: %d packets up, %d down; UL ring rp/wp %d/%d" % (data.up, data.down, L.r16(i), L.r16(N + i)))
+    log("summary: sim=%s phone=%s reg_cs=%s reg_ps=%s tech=%s operator=%s bars=%s dbm=%s" %
+        (st.sim, st.phone, st.reg_cs, st.reg_ps, st.tech, st.oper or "?", st.bars, st.dbm))
 
 
 if __name__ == "__main__":

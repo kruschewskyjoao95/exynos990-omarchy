@@ -156,3 +156,24 @@ Transporte, achados no aparelho:
   6. o AP religa (`relink 1`, ~200 ms; o EP volta em Gen3 x2): COMMAND do root, IOCC, BAR0, MSI e `pcie_link_ack`, repetido em +0, +50 e +200 ms.
 - **Resultado do ciclo:** depois dele, o CP não consome mais o anel FMT UL (`rp=2`, `wp=3`) e fica mudo. Root e EP estão sem erro AER, e o EP com BusMaster+. O EP marcou `>TAbort+` uma vez. Falta acertar a restauração (ordem de `pci_restore_state`, MSI e BME). Até lá, o link fica ligado.
 - **Detalhe da resposta GET de registro:** ela traz `domain 0 state 1`, um formato diferente da notificação. Isso não indica perda de registro.
+
+### Conexão de dados LTE na TIM (19/11/2026, kernel #18, sem flash)
+
+- **Sequência que funcionou (testada):** os layouts vêm de `IpcProtocol41Data` na `libsec-ril.so` do vendor. Foram lidos só para entender o protocolo; nada do binário está no repositório.
+  1. PS attach `0D 03` SET com os dados `01 00 00` (mensagem de 10 B);
+  2. definição do contexto `0D 01` SET: 149 B; `[enable 1, cid 1, tipo 2 (IP), APN…]`;
+  3. ativação `0D 04` SET: 248 B; `[estado 1, cid 1, flags u32, usuário[100], senha[100], …, auth no offset 238]`.
+- **Sem o PS attach:** o CP aceita definição e ativação (`0x8000`), mas avisa na hora `0D 10` status 3 (desabilitado), com causa 0.
+- **Com o PS attach:** 4 s depois chegam `0D 09`, com o IPv4 do contexto (CGNAT `100.x`) e o DNS da operadora, e `0D 10` status 1 (ENABLED). A TIM não pediu usuário nem senha.
+- **Plano de dados:**
+  - UL: IP cru no anel SBD do canal 11 (`QOS_NORMAL`), com `buff_len = len | 10 << 16` (canal do `rmnet0`).
+  - DL: chega pelos anéis SBD multipdp (canais 10/11), não pelo PKTPROC neste ensaio.
+  - O `s5123-ril.py` cria a `rmnet0` (TUN) com o IP recebido e a rota padrão de métrica 900, abaixo do Wi-Fi.
+- **Resultado:**
+  - handshake TCP completo, e o anúncio de roteador IPv6 chegou;
+  - `curl --interface rmnet0 http://example.com` → HTTP 302, 153 B, em 1,8 s;
+  - 76 pacotes subiram e 40 desceram; o anel UL foi consumido (`rp=wp`).
+- **Pendências:**
+  - HTTPS falhou em 0,4 s;
+  - ping ICMP (1.1.1.1 e 8.8.8.8) sem resposta;
+  - o contexto caiu com causa 2 (desativação regular) quando o daemon pôs o rádio em baixo consumo no fim.

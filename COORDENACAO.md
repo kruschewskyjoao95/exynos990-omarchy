@@ -18,6 +18,10 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 
 
 - [claude] Modem Shannon S5123 (3G/4G), marco 1: ligar o CP por GPIO e provar resposta (ps_hold/phone_active), depois PCIe1/SPI16. Pedido do proprietário em 19/11/2026. Caminhos: `packaging/kernel-patches/014*`, `checks/modem-*.md`, `research/modem-*.md`, `packaging/modem/`, `packaging/build-env/build-m1-kernel.sh` (linha de config). O `roadmap/10-modem-r8s.md` (sem commit, de outro agente) é usado como referência, sem edição.
+
+- ~~[gemini-swarm] Modem dados~~: parado por ordem do proprietário (19/11/2026); caminhos devolvidos ao [claude].
+
+- [claude] Continuação modem dados: portar bytes exatos libsec-ril (DataProfile 0x0D/0x1B, LTE attach 0x0D/0x14, Define 0x0D/0x01, SetPDP 0x0D/0x04, PsAttach 0x0D/0x03) para `packaging/modem/s5123-ril.py` e documentar em `research/modem-sec-ril-data.md` (diagnóstico "contexto desabilitado"). Herda caminhos do gemini-swarm por ordem do proprietário.
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
 
 ## A fazer
