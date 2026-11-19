@@ -16,6 +16,12 @@ BarWidget {
   property bool stale: false
   property bool popupOpen: false
   function close() { popupOpen = false }
+  onPopupOpenChanged: console.log("r8s.cellular: popup " + (popupOpen ? "open" : "closed"))
+
+  ShellIpc {
+    target: "r8s.cellular"
+    function toggle(): void { root.popupOpen = !root.popupOpen }
+  }
 
   readonly property bool airplane: info.airplane === true
   readonly property bool dataEnabled: info.data_enabled !== false
@@ -104,7 +110,10 @@ BarWidget {
     bar: root.bar
     text: root.inService && root.ratName ? root.glyph + " " + root.ratName.split(" ")[0] : root.glyph
     tooltipText: root.popupOpen ? "" : root.tooltip
-    onPressed: function(mouseButton) { root.popupOpen = !root.popupOpen }
+    onPressed: function(mouseButton) {
+      console.log("r8s.cellular: pressed " + mouseButton)
+      root.popupOpen = !root.popupOpen
+    }
   }
 
   PopupCard {
