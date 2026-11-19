@@ -83,3 +83,12 @@ O 0131 expõe dois parâmetros: `order` (0 = A: CSIS/PHY → atraso → sensor; 
 - Antes da primeira escrita, o PHY lê **tudo zero** (bias e SD0): não há estado deixado por firmware ou bootloader.
 
 Descartados: ordem e atraso entre o sensor e o receptor, e estado prévio do PHY.
+
+## Diff de valores do CSIS e canal 2 ao vivo (kernel #12)
+
+- **Valores numéricos conferidos com `exynos_is_dt.h`:**
+  - `CSI_MODE_VC_DT=3`, `LRTE_ENABLE=1`, RAW10 `0x2B`, embedded `0x12` e `HW_FORMAT_UNKNOWN=0x0`.
+  - Fora do caminho dos dados, a única escrita do LineageOS que o nosso driver não faz é o CH2 (VC2, DT 0). As máscaras de IRQ e o IRQ de linha não alteram dados.
+- **CH2 testado ao vivo por `/dev/mem`, durante o stream:** `0x60=(2<<16)|(2<<12)|BIT(11)`, `0x64=0`, `UPD_SDW=0xf`. **Sem efeito.**
+  - Num segundo ensaio, antes da escrita, o CSIS já estava preso em `INT_SRC0=0x10` (só ERR_OVER), com FS=0 e `dma_act=0x1`, enquanto o sensor contava 30 quadros/s.
+  - Depois do estouro o CSIS não se recupera sem reset. É consequência, não causa.
