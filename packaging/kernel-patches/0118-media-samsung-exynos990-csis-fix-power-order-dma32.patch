@@ -1,0 +1,124 @@
+From: Antigravity <antigravity@local>
+Subject: [PATCH] media: samsung: exynos990-csis: fix pd_csis/clk ordering & 32-bit DMA
+
+Power on pd_csis and csis_bus clock before touching DMA0 MMIO registers in
+start_streaming (and reverse in stop_streaming), and constrain DMA mask to
+32 bits for DMA0_ADDR1.
+
+Signed-off-by: Antigravity <antigravity@local>
+---
+diff --git a/arch/arm64/boot/dts/exynos/exynos990.dtsi b/arch/arm64/boot/dts/exynos/exynos990.dtsi
+index 000000000..000000000 100644
+--- a/arch/arm64/boot/dts/exynos/exynos990.dtsi
++++ b/arch/arm64/boot/dts/exynos/exynos990.dtsi
+@@ -1183,6 +1183,8 @@
+ 		interrupts = <GIC_SPI 182 IRQ_TYPE_LEVEL_HIGH>,
+ 			     <GIC_SPI 188 IRQ_TYPE_LEVEL_HIGH>;
+ 		interrupt-names = "csi", "dma";
++		clocks = <&cmu_top CLK_DOUT_CMU_CSIS_BUS>;
++		clock-names = "csis_bus";
+ 		power-domains = <&pd_csis>;
+ 		phys = <&mipi_phy_csis0 0>;
+ 		phy-names = "csis_dphy";
+diff --git a/drivers/media/platform/samsung/exynos990-csis.c b/drivers/media/platform/samsung/exynos990-csis.c
+index 000000000..000000000 100644
+--- a/drivers/media/platform/samsung/exynos990-csis.c
++++ b/drivers/media/platform/samsung/exynos990-csis.c
+@@ -3,6 +3,8 @@
+  * Samsung Exynos 990 MIPI CSI-2 receiver (CSIS v5.2) + WDMA V4L2 driver
+  */
+ 
++#include <linux/clk.h>
++#include <linux/dma-mapping.h>
+ #include <linux/interrupt.h>
+ #include <linux/io.h>
+ #include <linux/module.h>
+@@ -66,6 +68,7 @@
+ 	void __iomem *regs;
+ 	void __iomem *dma_regs;
+ 	void __iomem *dma_cmn_regs;
++	struct clk *clk;
+ 	struct phy *phy;
+ 	struct v4l2_device v4l2_dev;
+ 	struct media_device mdev;
+@@ -154,6 +157,12 @@
+ 		if (ret < 0)
+ 			return ret;
+ 
++		ret = clk_prepare_enable(csis->clk);
++		if (ret) {
++			pm_runtime_put(csis->dev);
++			return ret;
++		}
++
+ 		ret = phy_power_on(csis->phy);
+ 		if (ret) {
+ 			pm_runtime_put(csis->dev);
+@@ -186,6 +195,7 @@
+ 		val &= ~CSIS_CMN_CTRL_CSI_EN;
+ 		writel(val, csis->regs + CSIS_CMN_CTRL);
+ 		phy_power_off(csis->phy);
++		clk_disable_unprepare(csis->clk);
+ 		pm_runtime_put(csis->dev);
+ 	}
+ 
+@@ -257,6 +267,10 @@
+ 	int ret;
+ 
+ 	csis->sequence = 0;
++
++	ret = exynos990_csis_s_stream(&csis->sd, 1);
++	if (ret)
++		goto err_release;
+ 
+ 	if (csis->dma_regs && csis->dma_cmn_regs) {
+ 		spin_lock_irqsave(&csis->buf_lock, flags);
+@@ -279,10 +293,6 @@
+ 		writel(DMA0_CTRL_ENABLE, csis->dma_regs + DMA0_CTRL);
+ 	}
+ 
+-	ret = exynos990_csis_s_stream(&csis->sd, 1);
+-	if (ret)
+-		goto err_release;
+-
+ 	return 0;
+ 
+ err_release:
+@@ -311,11 +321,11 @@
+ 	struct exynos990_csis *csis = vb2_get_drv_priv(vq);
+ 	unsigned long flags;
+ 
+-	exynos990_csis_s_stream(&csis->sd, 0);
+ 	if (csis->dma_regs && csis->dma_cmn_regs) {
+ 		writel(0, csis->dma_regs + DMA0_CTRL);
+ 		writel(0, csis->dma_cmn_regs + DMA_INT_MASK);
+ 	}
++	exynos990_csis_s_stream(&csis->sd, 0);
+ 
+ 	spin_lock_irqsave(&csis->buf_lock, flags);
+ 	if (csis->active_buf) {
+@@ -447,6 +457,12 @@
+ 	if (IS_ERR(csis->dma_cmn_regs))
+ 		csis->dma_cmn_regs = NULL;
+ 
++	dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
++
++	csis->clk = devm_clk_get_optional(dev, "csis_bus");
++	if (IS_ERR(csis->clk))
++		return dev_err_probe(dev, PTR_ERR(csis->clk), "csis_bus\n");
++
+ 	csis->phy = devm_phy_get(dev, "csis_dphy");
+ 	if (IS_ERR(csis->phy))
+ 		return dev_err_probe(dev, PTR_ERR(csis->phy),
+@@ -561,9 +577,11 @@
+ 
+ 	ret = pm_runtime_resume_and_get(dev);
+ 	if (ret >= 0) {
++		clk_prepare_enable(csis->clk);
+ 		version = readl(csis->regs + CSIS_VERSION);
+ 		dev_info(dev, "Exynos 990 CSIS version 0x%08x (/dev/%s)\n",
+ 			 version, video_device_node_name(&csis->vdev));
++		clk_disable_unprepare(csis->clk);
+ 		pm_runtime_put(dev);
+ 	}
+ 

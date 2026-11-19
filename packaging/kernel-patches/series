@@ -16,3 +16,4 @@
 0115-media-samsung-exynos990-csis-wdma.patch
 0116-media-i2c-add-s5k2ld-and-hsi2c3.patch
 0117-media-r8s-camera-complete-pipeline.patch
+0118-media-samsung-exynos990-csis-fix-power-order-dma32.patch
