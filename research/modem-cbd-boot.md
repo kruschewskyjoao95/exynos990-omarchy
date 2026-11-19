@@ -146,7 +146,7 @@ Transporte, achados no aparelho:
 
 ### Entrega das mensagens do CP e economia de energia do link (19/11/2026, kernel #18, sem flash)
 
-- **Com o link sempre ligado:** o CP só entrega notificações (registro, sinal) depois de um quadro UL do AP. Um doorbell vazio (`MSG_DATA` sem quadro) ou uma leitura do BAR não basta. O CP também nunca sobe `cp2ap_wakeup` sozinho. Com uma consulta de registro (`08 05` GET) a cada 2 s, as notificações chegam em tempo real: HOME em LTE 2 s depois do modo normal, e o sinal é atualizado. Esse é o modo padrão do `s5123-ril.py`.
+- **Com o link sempre ligado:** o CP só entrega notificações (registro, sinal) depois de um quadro UL do AP. Um doorbell vazio (`MSG_DATA` sem quadro) ou uma leitura do BAR não basta. O CP também nunca sobe `cp2ap_wakeup` sozinho. Com uma consulta de registro (`08 05` GET) a cada 2 s, as notificações chegam em tempo real: HOME em 3G (UMTS, tecnologia 4) 2 s depois do modo normal, e o sinal é atualizado. Esse é o modo padrão do `s5123-ril.py`.
 - **Sequência Samsung (`R8S_PCIE_PM=1`, testado):**
   1. o CP baixa `cp2ap_wakeup`;
   2. 30 ms depois, o AP tira o Bus Master e o MSI do EP, coloca-o em D3hot e baixa `AP2CP_WAKEUP`;
@@ -157,7 +157,7 @@ Transporte, achados no aparelho:
 - **Resultado do ciclo:** depois dele, o CP não consome mais o anel FMT UL (`rp=2`, `wp=3`) e fica mudo. Root e EP estão sem erro AER, e o EP com BusMaster+. O EP marcou `>TAbort+` uma vez. Falta acertar a restauração (ordem de `pci_restore_state`, MSI e BME). Até lá, o link fica ligado.
 - **Detalhe da resposta GET de registro:** ela traz `domain 0 state 1`, um formato diferente da notificação. Isso não indica perda de registro.
 
-### Conexão de dados LTE na TIM (19/11/2026, kernel #18, sem flash)
+### Conexão de dados 3G (UMTS/HSDPA) na TIM (19/11/2026, kernel #18, sem flash)
 
 - **Sequência que funcionou (testada):** os layouts vêm de `IpcProtocol41Data` na `libsec-ril.so` do vendor. Foram lidos só para entender o protocolo; nada do binário está no repositório.
   1. PS attach `0D 03` SET com os dados `01 00 00` (mensagem de 10 B);
@@ -180,3 +180,9 @@ Transporte, achados no aparelho:
 - **Pacotes rastreados pelo daemon (`R8S_PKTLOG`):** SYN e SYN-ACK passam e o ACK sobe. Depois do primeiro segmento com dados chega RST da rede, e alguns destinos nem respondem ao SYN. Nenhum ICMP desce. Com MTU 1280 o comportamento é o mesmo.
 - **Todo HTTP é redirecionado:** `example.com` e `neverssl.com` devolvem `302 Found`, `Location: http://wcad.tim.com.br/`. Esse é o portal de bloqueio da TIM (linha sem pacote de dados ativo ou franquia esgotada, a confirmar pelo proprietário).
 - **Conclusão (observado):** o plano de dados do Linux funciona de ponta a ponta até a rede da TIM. O que sobra está do lado da operadora/linha. A falta de PCO/IPv6 (pedimos só IPv4) não foi descartada.
+
+### Correção e serviço permanente (19/11/2026)
+
+- **Correção:** a tecnologia `4` do registro é UMTS (`IPC_NET_ACCESS_TECHNOLOGY_UMTS`, libsamsung-ipc `net.h`), e `0D 0C = 01` é HSDPA. O aparelho está registrado em 3G, não em LTE como anotei antes. O 4G depende de um passo ainda não feito: modo de rede LTE ou perfil de attach `0D 14`.
+- **Testado:** `r8s-modem.service` (instalado por `packaging/modem/install-modem.sh`, habilitado no boot) roda `s5123-modem-run.sh`. Ele mantém o `s5123-ril.py`, que grava `/run/s5123/status.json` a cada 2 s, por exemplo: online, SIM pronto, home, TIM, `3G H`, 4 barras, -62 dBm. `systemctl restart` põe o rádio em baixo consumo, desliga o CP e o sobe de novo.
+- **Barra:** o widget `r8s.cellular` (`packaging/modem/omarchy-plugin/`, instalado em `~/.config/omarchy/plugins/r8s-cellular` porque esta versão do Omarchy espera hífen na pasta) lê esse arquivo. O widget carregou sem erro de QML. Falta conferir na tela.
