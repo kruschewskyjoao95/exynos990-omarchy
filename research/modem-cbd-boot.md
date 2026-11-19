@@ -186,3 +186,11 @@ Transporte, achados no aparelho:
 - **Correção:** a tecnologia `4` do registro é UMTS (`IPC_NET_ACCESS_TECHNOLOGY_UMTS`, libsamsung-ipc `net.h`), e `0D 0C = 01` é HSDPA. O aparelho está registrado em 3G, não em LTE como anotei antes. O 4G depende de um passo ainda não feito: modo de rede LTE ou perfil de attach `0D 14`.
 - **Testado:** `r8s-modem.service` (instalado por `packaging/modem/install-modem.sh`, habilitado no boot) roda `s5123-modem-run.sh`. Ele mantém o `s5123-ril.py`, que grava `/run/s5123/status.json` a cada 2 s, por exemplo: online, SIM pronto, home, TIM, `3G H`, 4 barras, -62 dBm. `systemctl restart` põe o rádio em baixo consumo, desliga o CP e o sobe de novo.
 - **Barra:** o widget `r8s.cellular` (`packaging/modem/omarchy-plugin/`, instalado em `~/.config/omarchy/plugins/r8s-cellular` porque esta versão do Omarchy espera hífen na pasta) lê esse arquivo. O widget carregou sem erro de QML. Falta conferir na tela.
+- **Modo avião e dados móveis (testado):**
+  - `r8s-modem-ctl airplane on|off` e `data on|off` gravam `/run/s5123/request`. Só o usuário da área de trabalho e o root podem escrever, e o daemon aceita apenas `airplane=0|1` e `data=0|1`.
+  - O daemon guarda a escolha em `/var/lib/r8s-modem/prefs.json`.
+  - Avião: desativa o contexto, remove a `rmnet0` e põe o rádio em baixo consumo (`01 07 = 01 00`). O registro some.
+  - Saindo do avião: modo normal; registrado de novo e com dados em 8 s.
+  - Dados desligados: `0D 04` com estado 0 desativa o contexto, e o CP confirma com `0D 10` status 3.
+  - O APN vem da operadora registrada (TIM → `timbrasil.br`), ou de `R8S_APN`.
+  - O widget `r8s.cellular` abre um cartão com as duas chaves. Ele só roda as linhas de comando fixas do `r8s-modem-ctl`.

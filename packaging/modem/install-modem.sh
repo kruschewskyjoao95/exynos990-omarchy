@@ -11,6 +11,7 @@ for f in s5123-ril.py ipc-handshake.py s5123-modem-run.sh modem-down.sh cp-spibo
 done
 [ -x "$D/cuse-umts" ] && install -m 0755 "$D/cuse-umts" $L/
 [ -f "$D/cbd-props.so" ] && install -m 0644 "$D/cbd-props.so" $L/
+install -m 0755 "$D/r8s-modem-ctl" /usr/local/bin/r8s-modem-ctl
 install -m 0644 "$D/r8s-modem.service" /etc/systemd/system/r8s-modem.service
 systemctl daemon-reload
 echo "installed; start with: systemctl enable --now r8s-modem"

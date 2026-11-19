@@ -10,6 +10,8 @@ C=/run/android-root
 S=/run/s5123
 mkdir -p $S
 echo '{"modem":"booting"}' > $S/status.json; chmod 644 $S/status.json
+# The desktop user asks for airplane/data changes through r8s-modem-ctl; only it and root may write.
+: > $S/request; chown "${R8S_CTL_USER:-r8s}" $S/request; chmod 644 $S/request
 
 stop() {
 	[ -n "${RIL:-}" ] && kill -TERM "$RIL" 2>/dev/null && wait "$RIL"

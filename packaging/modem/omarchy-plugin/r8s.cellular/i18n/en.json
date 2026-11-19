@@ -8,5 +8,14 @@
   "emergency": "Emergency calls only",
   "registered": "%1 · %2 · %3 dBm",
   "roaming": "%1 (roaming) · %2 · %3 dBm",
-  "stale": "Modem not responding"
+  "stale": "Modem not responding",
+  "title": "Cellular",
+  "data": "Mobile data",
+  "dataOn": "Using %1",
+  "dataReady": "On, connecting",
+  "dataOff": "Off",
+  "airplane": "Airplane mode",
+  "airplaneOn": "Radio off, saves battery",
+  "airplaneOff": "Radio on",
+  "airplaneMode": "Airplane mode"
 }

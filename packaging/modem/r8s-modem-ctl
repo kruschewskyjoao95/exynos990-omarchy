@@ -1,0 +1,20 @@
+#!/bin/sh
+# r8s-modem-ctl airplane on|off | data on|off | status
+# Writes the desired state for s5123-ril.py to /run/s5123/request (the daemon validates it again).
+set -eu
+F=/run/s5123/request
+S=/run/s5123/status.json
+usage() { echo "usage: r8s-modem-ctl airplane on|off | data on|off | status" >&2; exit 2; }
+[ $# -ge 1 ] || usage
+if [ "$1" = status ]; then cat "$S"; echo; exit 0; fi
+[ $# -eq 2 ] || usage
+case "$1" in airplane|data) ;; *) usage ;; esac
+case "$2" in on) v=1 ;; off) v=0 ;; *) usage ;; esac
+[ -w "$F" ] || { echo "r8s-modem-ctl: $F not writable (is r8s-modem running?)" >&2; exit 1; }
+# keep the other key as the status file reports it, so one change never flips the other
+cur() { sed -n "s/.*\"$1\": \(true\|false\).*/\1/p" "$S" 2>/dev/null | head -1; }
+a=$(cur airplane); d=$(cur data_enabled)
+a=$([ "$a" = true ] && echo 1 || echo 0); d=$([ "$d" = false ] && echo 0 || echo 1)
+[ "$1" = airplane ] && a=$v
+[ "$1" = data ] && d=$v
+printf 'airplane=%s\ndata=%s\n' "$a" "$d" > "$F"

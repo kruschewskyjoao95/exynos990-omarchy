@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 // Cellular status of the r8s S5123 modem. s5123-ril.py rewrites /run/s5123/status.json every 2 s
@@ -13,6 +14,16 @@ BarWidget {
 
   property var info: ({ modem: "off" })
   property bool stale: false
+  property bool popupOpen: false
+  function close() { popupOpen = false }
+
+  readonly property bool airplane: info.airplane === true
+  readonly property bool dataEnabled: info.data_enabled !== false
+  readonly property bool dataActive: info.data === true
+
+  // Fixed command lines only: nothing from the status file reaches the shell.
+  function setAirplane(on) { if (root.bar) root.bar.run(on ? "r8s-modem-ctl airplane on" : "r8s-modem-ctl airplane off") }
+  function setData(on) { if (root.bar) root.bar.run(on ? "r8s-modem-ctl data on" : "r8s-modem-ctl data off") }
 
   Translations { id: strings; directory: Qt.resolvedUrl("i18n") }
 
@@ -45,6 +56,7 @@ BarWidget {
   readonly property bool inService: modemState === "online" && !stale && (reg === "home" || reg === "roaming")
 
   readonly property string glyph: {
+    if (modemState === "online" && airplane) return "\u{f001d}"        // md-airplane
     if (modemState !== "online" || stale) return "\u{f0783}"            // md-signal_off
     if (clean(info.sim, /[^a-z]/g, 8) === "absent") return "\u{f04a9}"  // md-sim_off
     if (!inService) return "\u{f08bf}"                                  // md-signal_cellular_outline
@@ -58,6 +70,7 @@ BarWidget {
     if (modemState === "booting") return strings.t("booting")
     if (modemState === "failed") return strings.t("failed")
     if (modemState !== "online") return strings.t("off")
+    if (airplane) return strings.t("airplaneMode")
     if (clean(info.sim, /[^a-z]/g, 8) === "absent") return strings.t("noSim")
     if (reg === "searching") return strings.t("searching")
     if (reg === "emergency") return strings.t("emergency")
@@ -90,6 +103,60 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: root.inService && root.ratName ? root.glyph + " " + root.ratName.split(" ")[0] : root.glyph
-    tooltipText: root.tooltip
+    tooltipText: root.popupOpen ? "" : root.tooltip
+    onPressed: function(mouseButton) { root.popupOpen = !root.popupOpen }
+  }
+
+  PopupCard {
+    id: popup
+    anchorItem: root
+    bar: root.bar
+    owner: root
+    open: root.popupOpen
+    contentWidth: popup.fittedContentWidth(Style.space(300))
+    contentHeight: popup.fittedContentHeight(column.implicitHeight)
+
+    Column {
+      id: column
+      width: parent.width
+      spacing: Style.space(8)
+
+      Text {
+        textFormat: Text.PlainText
+        text: strings.t("title")
+        color: Commons.Color.popups.text
+        font.family: Style.font.family
+        font.pixelSize: Style.font.subtitle
+        font.bold: true
+      }
+      Text {
+        textFormat: Text.PlainText
+        width: parent.width
+        wrapMode: Text.Wrap
+        text: root.tooltip
+        color: Commons.Color.popups.text
+        font.family: Style.font.family
+        font.pixelSize: Style.font.body
+      }
+      Toggle {
+        width: parent.width
+        enabled: root.modemState === "online" && !root.airplane
+        opacity: enabled ? 1 : 0.5
+        label: strings.t("data")
+        description: !root.dataEnabled ? strings.t("dataOff")
+          : root.dataActive ? strings.t("dataOn").arg(root.ratName || "?") : strings.t("dataReady")
+        checked: root.dataEnabled
+        onClicked: root.setData(!root.dataEnabled)
+      }
+      Toggle {
+        width: parent.width
+        enabled: root.modemState === "online"
+        opacity: enabled ? 1 : 0.5
+        label: strings.t("airplane")
+        description: root.airplane ? strings.t("airplaneOn") : strings.t("airplaneOff")
+        checked: root.airplane
+        onClicked: root.setAirplane(!root.airplane)
+      }
+    }
   }
 }

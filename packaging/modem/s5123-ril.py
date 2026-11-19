@@ -312,6 +312,11 @@ class Data:
             return "v6 next %d len %d" % (pkt[6], len(pkt))
         return "? %d B %s" % (len(pkt), pkt[:8].hex())
 
+    def close(self):
+        """Closing the TUN fd removes rmnet0 with its address and route."""
+        os.close(self.tun)
+        log("rmnet0 down (%d packets up, %d down)" % (self.up, self.down))
+
     def deliver(self, pkt):
         if self.down < int(os.environ.get("R8S_PKTLOG", "12")):
             log("DL " + self.describe(pkt))
@@ -379,7 +384,7 @@ def on_fmt(st, m):
         s = bytes(d)
         code = next((s[i:i + k].decode() for i in range(len(s)) for k in (6, 5)
                      if s[i:i + k].isdigit()), "")
-        st.oper = code or st.oper
+        st.oper = code if code and code.strip("0") else st.oper   # 000000: no network (radio off)
         log("<- SERVING NETWORK operator %s" % (code or "?"))
     elif g == 0x07 and ix in (0x01, 0x06) and len(d) >= 2:
         if ix == 1 and d[0] & 1:
@@ -467,6 +472,43 @@ class Rfs:
 OPERATORS = {"72402": "TIM", "72403": "TIM", "72404": "TIM", "72405": "Claro", "72406": "Vivo",
              "72410": "Vivo", "72411": "Vivo", "72423": "Vivo", "72431": "Oi"}
 STATUS = "/run/s5123/status.json"
+REQUEST = "/run/s5123/request"                 # written by r8s-modem-ctl (the desktop user may write it)
+PREFS = "/var/lib/r8s-modem/prefs.json"        # survives reboots
+APNS = {"TIM": "timbrasil.br", "Claro": "claro.com.br", "Vivo": "zap.vivo.com.br", "Oi": "gprs.oi.com.br"}
+
+
+def load_prefs():
+    import json
+    prefs = {"airplane": False, "data": True}
+    try:
+        doc = json.load(open(PREFS))
+        prefs.update({k: bool(doc[k]) for k in prefs if isinstance(doc.get(k), bool)})
+    except (OSError, ValueError):
+        pass
+    return prefs
+
+
+def save_prefs(prefs):
+    import json
+    os.makedirs(os.path.dirname(PREFS), exist_ok=True)
+    with open(PREFS + ".tmp", "w") as f:
+        json.dump(prefs, f)
+    os.replace(PREFS + ".tmp", PREFS)
+
+
+def read_request():
+    """Only 'airplane=0|1' and 'data=0|1' lines are accepted; anything else in the file is ignored."""
+    out = {}
+    try:
+        with open(REQUEST) as f:
+            text = f.read(256)
+    except OSError:
+        return out
+    for line in text.splitlines():
+        k, _, v = line.strip().partition("=")
+        if k in ("airplane", "data") and v in ("0", "1"):
+            out[k] = v == "1"
+    return out
 
 
 def rat(st):
@@ -480,12 +522,15 @@ def rat(st):
     return "4G?%d" % st.tech                            # not seen yet: logged as is
 
 
-def write_status(st, data, modem):
+def write_status(st, data, modem, prefs=None):
     import json
     reg = {1: "none", 2: "home", 3: "searching", 4: "emergency", 5: "unknown", 6: "roaming"}.get(st.reg_cs or st.reg)
+    off = bool(prefs and prefs["airplane"])
     doc = {"modem": modem, "sim": {0x82: "ready", 0x83: "ready", 0x80: "absent"}.get(st.sim, "pending"),
-           "registration": reg or "none", "operator": OPERATORS.get(st.oper, st.oper or ""), "rat": rat(st),
-           "bars": st.bars if st.bars is not None else 0, "dbm": st.dbm, "data": bool(data),
+           "registration": "none" if off else reg or "none",
+           "operator": "" if off else OPERATORS.get(st.oper, st.oper or ""), "rat": "" if off else rat(st),
+           "bars": 0 if off or st.bars is None else st.bars, "dbm": None if off else st.dbm, "data": bool(data),
+           "airplane": bool(prefs and prefs["airplane"]), "data_enabled": bool(prefs and prefs["data"]),
            "updated": int(time.time())}
     os.makedirs(os.path.dirname(STATUS), exist_ok=True)
     with open(STATUS + ".tmp", "w") as f:
@@ -533,8 +578,20 @@ def main():
     wake = Wakeup(L)
     L.wake = wake
     t_up, asked_normal, asked_ver, last_msg, last_snap = time.monotonic(), False, False, None, None
-    apn = os.environ.get("R8S_APN", "").encode()        # empty: no data call
+    apn_env = os.environ.get("R8S_APN", "").encode()    # empty: the operator's public APN (APNS)
     data, step, step_t = None, 0, 0.0
+    prefs, req_mtime = load_prefs(), None
+    log("preferences: airplane %d, mobile data %d" % (prefs["airplane"], prefs["data"]))
+
+    def deactivate():
+        nonlocal data, step
+        d = bytearray(241)
+        d[1] = 1                                        # state 0 (deactivate), cid 1
+        L.fmt(0x0D, 0x04, 0x03, bytes(d))
+        if data:
+            data.close()
+        data, step = None, 99
+        st.ip4, st.asked_ip, st.pdp_state = None, False, None
     kick = float(os.environ.get("R8S_KICK_S", "0"))   # >0: an empty MSG_DATA doorbell this often (see research)
     poll = float(os.environ.get("R8S_POLL_S", "2"))   # registration GET this often: a UL frame lets the CP flush
     next_poll = 5.0
@@ -543,7 +600,44 @@ def main():
     while time.monotonic() - t_up < run_s and not stop:
         if time.monotonic() - last_write > 2:
             last_write = time.monotonic()
-            write_status(st, data, "online")
+            write_status(st, data, "online", prefs)
+        try:
+            mt = os.stat(REQUEST).st_mtime_ns
+        except OSError:
+            mt = None
+        if mt != req_mtime and online:
+            req_mtime = mt
+            want = read_request()
+            if "airplane" in want and want["airplane"] != prefs["airplane"]:
+                prefs["airplane"] = want["airplane"]
+                if prefs["airplane"]:
+                    if data or 0 < step < 99:
+                        deactivate()
+                    step = 99                           # no data steps while the radio is off
+                    L.fmt(0x01, 0x07, 0x01, b"\x01\x00")      # low power: the radio off
+                    st.reg = st.reg_cs = st.reg_ps = st.bars = st.dbm = None
+                    st.reg_seen = {}
+                    log("airplane mode on")
+                else:
+                    L.fmt(0x01, 0x07, 0x01, b"\x02\x02")
+                    step = 0
+                    log("airplane mode off")
+            if "data" in want and want["data"] != prefs["data"]:
+                prefs["data"] = want["data"]
+                if not prefs["data"] and (data or 0 < step < 99):
+                    deactivate()
+                elif prefs["data"]:
+                    step = 0
+                log("mobile data %s" % ("on" if prefs["data"] else "off"))
+            save_prefs(prefs)
+            last_write = 0.0
+        if data and st.pdp_state == 3:                  # the network or the CP ended the context
+            log("data context ended by the CP; retrying in 10 s")
+            data.close()
+            data, step, step_t = None, -9, time.monotonic() - t_up
+            st.ip4, st.asked_ip, st.pdp_state = None, False, None
+        if step == -9 and time.monotonic() - t_up - step_t > 10:
+            step = 0
         wake.poll()
         msg = L.r32(hs.CP2AP)
         snap = (msg, L.r32(hs.AP2CP), L.r16(LINK[CH_FMT]), L.r16(N + LINK[CH_FMT]), L.r32(0), L.r32(4))
@@ -573,12 +667,13 @@ def main():
         if kick and online and now >= next_kick:
             next_kick = now + kick
             L.tell(MSG_VALID | MSG_DATA)
-        if not shown_link and now > 20:
+        if DEBUG and not shown_link and now > 20:
             shown_link = True
             for dev in ("0001:00:00.0", "0001:01:00.0"):
                 out = subprocess.run(["lspci", "-vv", "-s", dev], capture_output=True, text=True).stdout
                 log(dev, " | ".join(l.strip() for l in out.splitlines() if any(k in l for k in ("Control:", "Status:", "DevSta", "UESta", "CESta", "LnkSta:"))))
-        if apn and st.reg_ps in (2, 6) and step == 0 and now > 5:
+        apn = apn_env or APNS.get(OPERATORS.get(st.oper, ""), "").encode()
+        if apn and prefs["data"] and not prefs["airplane"] and st.reg_ps in (2, 6) and step == 0 and now > 5:
             # IpcProtocol41Data::IpcTxPsAttach: 10-byte message, data [attach 1, 0, 0]
             st.last_result = None
             L.fmt(0x0D, 0x03, 0x03, b"\x01\x00\x00")
@@ -633,11 +728,11 @@ def main():
         if poll and online and now >= next_poll:
             next_poll = now + (0.3 if data else poll)   # with data up: DL also waits for a UL frame
             L.fmt(0x08, 0x05, 0x02, quiet=True)
-        if not asked_normal and now > 3:
+        if not asked_normal and now > 3 and not prefs["airplane"]:
             asked_normal = True
             L.fmt(0x01, 0x07, 0x01, b"\x02\x02")              # normal mode: the radio may register
         time.sleep(0.002)
-    write_status(st, None, "off")
+    write_status(st, None, "off", prefs)
     L.fmt(0x01, 0x07, 0x01, b"\x01\x00")                      # back to low power before power-off
     time.sleep(1)
     for ch, m in L.receive():
