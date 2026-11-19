@@ -93,7 +93,13 @@ Falta levar isso para o kernel: um caminho GEN4 no `pci-exynos.c`, ou driver pr�
 
 - `echo 0 > relink` remove o endpoint. O Wi-Fi (domínio 0000) não foi afetado.
 - **Pendências:**
-  - BAR0 sai como `<ignored>`, não atribuído pelo rescan. O doorbell (`pci_db_addr = 0x14D60000`, endereço de barramento) depende dele.
+  - BAR0 sai como `<ignored>`. **Não é bug:** o endpoint tem classe `0x000000`, e o PCI core não atribui recursos a dispositivos sem classe (`drivers/pci/setup-bus.c:184`). Isso foi reproduzido também com remove+rescan pelo sysfs. No LineageOS, quem faz isso é o driver do endpoint (`s51xx_pcie_probe()`):
+    - grava `pci_db_addr` (`0x14D60000`) no BAR0 e relê, mascarado;
+    - o offset do doorbell é `db_addr - BAR` (`0x60000` com o BAR0 de 1 MiB);
+    - o doorbell fica no início da janela do root port (`bus->self->resource[8]`) mais o offset;
+    - zera os BARs 1–5.
+
+    O nosso driver do modem terá de fazer o mesmo, com o BAR0 dentro da janela atribuída à bridge.
   - O link negocia Gen4; o protótipo ficava em Gen1.
   - Falta MSI.
 - Os scripts no aparelho ficam em `/usr/local/lib/r8s-modem/`, porque o `/tmp` é tmpfs.
