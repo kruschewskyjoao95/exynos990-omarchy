@@ -34,3 +34,4 @@
 0141-r8s-modem-pcie-gen4-root-complex.patch
 0142-r8s-modem-s5123-endpoint-shmem.patch
 0143-r8s-modem-pcie-root-port-bar-masks.patch
+0145-r8s-usb3-superspeed-phy.patch

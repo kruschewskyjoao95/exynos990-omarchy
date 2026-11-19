@@ -1,0 +1,48 @@
+From: Claude <noreply@anthropic.com>
+Subject: [PATCH] r8s: enable USB 3.1 SuperSpeed (5 Gbps) on the USB-C port
+
+Gives the dwc3 the usb3-phy, maps the combo/PCS regions and the orientation GPIO (gpm26-0) of the PHY node
+and raises maximum-speed from high-speed to super-speed. NOT in the series: apply it for a RAM test
+(R8S_EXTRA_PATCHES) until SuperSpeed is proven; the USB 2.0 pair stays the fallback.
+
+Signed-off-by: Claude <noreply@anthropic.com>
+---
+diff --git c/arch/arm64/boot/dts/exynos/exynos990-r8s.dts i/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
+index d7bdcb8ad..de3c199e5 100644
+--- c/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
++++ i/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
+@@ -369,7 +369,8 @@ &usbdrd_dwc3 {
+ 	dr_mode = "otg";
+ 	usb-role-switch;
+ 	role-switch-default-mode = "peripheral";
+-	maximum-speed = "high-speed";
++	/* SuperSpeed 5 Gbps (the Samsung r8s DT also forces Gen1); the USB 2.0 pair stays the fallback */
++	maximum-speed = "super-speed";
+ 	snps,dis_u2_susphy_quirk;
+ 	snps,dis_enblslpm_quirk;
+ };
+diff --git c/arch/arm64/boot/dts/exynos/exynos990.dtsi i/arch/arm64/boot/dts/exynos/exynos990.dtsi
+index ff18f7682..aba31aecd 100644
+--- c/arch/arm64/boot/dts/exynos/exynos990.dtsi
++++ i/arch/arm64/boot/dts/exynos/exynos990.dtsi
+@@ -1180,14 +1180,17 @@ usbdrd_dwc3: usb@0 {
+ 				compatible = "snps,dwc3";
+ 				reg = <0x0 0x10000>;
+ 				interrupts = <GIC_SPI 310 IRQ_TYPE_LEVEL_HIGH>;
+-				phys = <&usbdrd_phy 0>;
+-				phy-names = "usb2-phy";
++				phys = <&usbdrd_phy 0>, <&usbdrd_phy 1>;
++				phy-names = "usb2-phy", "usb3-phy";
+ 			};
+ 		};
+ 
+ 		usbdrd_phy: phy@135d0000 {
+ 			compatible = "samsung,exynos990-usbdrd-phy";
+-			reg = <0x10c00000 0x50000>;
++			/* USBCON control, USB/DP combo PMA and its PCS (Samsung exynos9830.dts usbdrd_phy0) */
++			reg = <0x10c00000 0x50000>, <0x10ae0000 0x2800>, <0x10af0000 0x800>;
++			/* cable orientation (Samsung phy,gpio_phy_port) */
++			phy-port-gpios = <&gpm26 0 GPIO_ACTIVE_HIGH>;
+ 			clocks = <&cmu_hsi0 CLK_GOUT_HSI0_USB31DRD_ACLK_PHYCTRL>,
+ 				 	 <&oscclk>;
+ 			clock-names = "phy", "ref";

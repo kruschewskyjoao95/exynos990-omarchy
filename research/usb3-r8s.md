@@ -31,6 +31,13 @@ Pedido do proprietário: habilitar USB 3 (celular USB-C para notebook USB-A 3.0)
 - **Kernel em execução**: sem `OF_OVERLAY`/`OF_CONFIGFS`, então mudar o DT exige um kernel novo (nada de teste a quente). PHY e dwc3 são built-in.
 - **Compilação**: `build-m1-kernel.sh` apaga e refaz `out/work/linux` e grava em `out/boot/`. A tarefa de áudio (`0144`) usa a mesma árvore; compilar o USB 3 ali desfaria o trabalho dela. Precisa de coordenação ou de um diretório de trabalho separado no script.
 
+## Implementação (19/11/2026)
+
+- `packaging/kernel-patches/0145-r8s-usb3-superspeed-phy.patch` (na série): código do PHY combinado USB/DP da Samsung (`phy-exynos-usbdp-gen2-v2*`, `phy-exynos-usb3p1-reg.h`, `phy-samsung-usb-cal.h`), `phy-exynos990-usb3.c` (cola: `pipe_ovrd`, `pma_ready`, ativação do combo; calibração padrão), e as mudanças em `phy-exynos5-usbdrd.c`: instância PIPE3 do 990, `exit` do PIPE3 sem desligar o PHY HS, `set_mode` ignora o SuperSpeed. **Inerte sem as regiões do DT**; o `init` nunca falha (sem trava de SuperSpeed o porto continua USB 2.0). Opção `CONFIG_PHY_EXYNOS990_USB3` (ligada por `build-m1-kernel.sh` na série).
+- `0146-r8s-usb3-enable-dwc3-superspeed.patch` (**fora da série**): `usb3-phy` no dwc3, regiões `0x10ae0000` e `0x10af0000` e GPIO de orientação `gpm26-0` no nó do PHY, `maximum-speed = "super-speed"`. Entra só por `R8S_EXTRA_PATCHES` para teste em RAM.
+- A calibração do combo depende da revisão do chip (`exynos_soc_info.main_rev/sub_rev`): o aparelho é **EVT1.1** (`/sys/devices/soc0/revision = 11`), fixado no código, com aviso no log para outra revisão.
+- Compilação: `R8S_OUT_DIR` (saída separada, sem tocar em `out/work/linux` do áudio), `R8S_SKIP_PATCHES` (camera `0123 0124 0127 0128 0129 0131` não aplicam numa árvore nova) e `R8S_EXTRA_PATCHES`. Base: kernel completo da série; depois `Image` e DTB incrementais com `0145` e `0146`. Imagem: `out/usb3/boot/r8s-ufs.img` (24.532.992 B, SHA-256 `49d3205a5b405eea491116ac789c9688d4cfddd6b6f8fffee569d0ebefbcb5b2`), ainda **não iniciada no aparelho**.
+
 ## Limites e riscos (honestidade sobre o ganho)
 
 - USB 3 permite declarar 900 mA: no melhor caso 4,5 W contra 2,5 W hoje. Cabo USB-A para USB-C sempre anuncia corrente padrão (Rp 56 kΩ).

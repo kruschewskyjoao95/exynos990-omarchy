@@ -19,7 +19,10 @@ case "$PATCHSET" in
   *) echo "unknown R8S_KERNEL_PATCHSET: $PATCHSET (expected baseline or series)" >&2; exit 2 ;;
 esac
 
-mkdir -p "$ROOT/out/work" "$ROOT/out/boot" "$ROOT/out/staging" "$ROOT/logs"
+# R8S_OUT_DIR: build into another directory (mounted over /work/out in the container) so a parallel task keeps
+# its own out/work/linux and out/boot. Default: the shared $ROOT/out.
+OUT="${R8S_OUT_DIR:-$ROOT/out}"
+mkdir -p "$OUT/work" "$OUT/boot" "$OUT/staging" "$ROOT/logs"
 
 if [ ! -f "$ROOT/blobs/firmware/ath11k/QCA6390/hw2.0/amss.bin" ]; then
   echo "missing QCA6390 firmware in $ROOT/blobs/firmware/ath11k/QCA6390/hw2.0/" >&2
@@ -29,8 +32,11 @@ fi
 docker run --rm \
   -u "$(id -u):$(id -g)" \
   -v "$ROOT:/work" \
+  ${R8S_OUT_DIR:+-v "$R8S_OUT_DIR:/work/out"} \
   -e MODE="$MODE" \
   -e PATCHSET="$PATCHSET" \
+  -e SKIP_PATCHES="${R8S_SKIP_PATCHES:-}" \
+  -e EXTRA_PATCHES="${R8S_EXTRA_PATCHES:-}" \
   -e NPROC="$NPROC" \
   "$IMAGE" bash -euo pipefail -c '
 export HOME=/tmp
@@ -58,10 +64,17 @@ prepare_kernel_tree() {
   LOCAL_PATCHES=()
   for p in "${PATCHES[@]}"; do
     case "$p" in ""|\#*) continue ;; esac
+    # R8S_SKIP_PATCHES="0123 0124": numeric prefixes to leave out (e.g. series patches that no longer apply fresh)
+    case " ${SKIP_PATCHES:-} " in *" ${p%%-*} "*) echo "Skipping local $p"; continue ;; esac
     if [[ ! "$p" =~ ^[0-9][a-zA-Z0-9._-]*\.patch$ ]] || [ ! -s "/work/packaging/kernel-patches/$p" ]; then
       echo "ERROR: invalid or missing local patch: $p" >&2
       exit 1
     fi
+    LOCAL_PATCHES+=("$p")
+  done
+  # R8S_EXTRA_PATCHES="0146-...patch": patches outside the series, applied last (RAM tests of unproven changes)
+  for p in ${EXTRA_PATCHES:-}; do
+    [ -s "/work/packaging/kernel-patches/$p" ] || { echo "ERROR: missing extra patch: $p" >&2; exit 1; }
     LOCAL_PATCHES+=("$p")
   done
   [ "${#LOCAL_PATCHES[@]}" -gt 0 ] || { echo "ERROR: empty patch series" >&2; exit 1; }
@@ -90,7 +103,7 @@ prepare_kernel_tree() {
     scripts/config -e DEVFREQ_THERMAL
     scripts/config -e MEDIA_SUPPORT -e MEDIA_PLATFORM_SUPPORT -e MEDIA_PLATFORM_DRIVERS -e VIDEO_DEV -e MEDIA_CONTROLLER
     scripts/config -e REGULATOR_S2MPS22_ACPM -e PHY_EXYNOS990_MIPI_CSI -e VIDEO_EXYNOS990_CSIS -e VIDEO_S5K2LD
-    scripts/config -e PCIE_EXYNOS990_GEN4 -e S5123_MODEM
+    scripts/config -e PCIE_EXYNOS990_GEN4 -e S5123_MODEM -e PHY_EXYNOS990_USB3
   fi
   make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
   REL=$(make -s ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- kernelrelease)
