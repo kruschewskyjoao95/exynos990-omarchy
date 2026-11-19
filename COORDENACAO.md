@@ -8,6 +8,7 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 
 ## Em andamento
 
+- [claude] ABOX Arch/mainline: som interno via núcleo ABOX (probe+calliope+UAIF2→cs35l41). Caminhos: `packaging/kernel-patches/014*`, `checks/audio-*.md`, `out/work/linux`, `roadmap/11-audio-r8s.md`.
 
 - [codex] Desktop em andamento: lk3rd gravado e slim 0107 em RAM com KMS 1080x2400. Próximo passo é gravar `ufs-root.img` em userdata. Sem novo backup. Arquivos: `COORDENACAO.md`.
 
@@ -29,6 +30,8 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 8. [claude] Revisar logs/artefatos gerados em M2–M4 no aparelho real antes de avançar para M5.
 
 ## Feito, aguardando revisão
+- [codex] `2811745`: reproduzido `INIT_START` (`0xc1`) no S5123 #18 após o firmware. Dois ensaios de `PIF_INIT_DONE` com descritores experimentais não chegaram a `PHONE_START`. Evidência em `research/modem-cbd-boot.md`.
+
 - [codex] `c452485`: MSI do endpoint e SIPC5 alinhado a 8 bytes confirmaram boot completo do S5123 (`0xAF00`, `cbd` rc 0, `phone_active` ativo) no #18. IPC em operação normal e dados celulares pendentes. Evidência em `research/modem-cbd-boot.md`.
 
 - [codex] `c73ced3`: `0143` validado em boot temporário no kernel #18. Janela PCIe cobre `0x14060000`; o CP ainda deixou `RAW TX tail=0` em três tentativas de `0x9100`. Wi-Fi confirmado conectado pós-ensaio. Evidência em `research/modem-cbd-boot.md`.
