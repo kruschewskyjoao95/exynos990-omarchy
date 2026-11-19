@@ -1,0 +1,114 @@
+From: Antigravity <antigravity@local>
+Subject: [PATCH] media: r8s-camera: add WDMA internal test pattern mode, log ACPM ret, request DMA abort on stop
+
+Add a runtime-toggleable `pattern` module parameter to exynos990-csis that
+drives the CSISX4 WDMA internal test pattern generator (0x170c0020..0x28)
+instead of starting the S5K2LD sensor, cleanly separating WDMA/IRQ/DMA_MUX
+verification from the MIPI C-PHY / sensor link.
+
+Also log the return codes of ACPM DVFS set_rate() calls and assert
+DMA_ABORT_REQ (DMA_CMN_CTRL=1) during stop_dma().
+
+Signed-off-by: Antigravity <antigravity@local>
+---
+diff --git a/drivers/media/platform/samsung/exynos990-csis.c b/drivers/media/platform/samsung/exynos990-csis.c
+index 111111111..222222222 100644
+--- a/drivers/media/platform/samsung/exynos990-csis.c
++++ b/drivers/media/platform/samsung/exynos990-csis.c
+@@ -64,6 +64,13 @@
+ 
+ /* CSISX4 WDMA Common (0x170c0000) */
+ #define COMMON_DMA_CTRL			0x0008
++#define TEST_PATTERN_ON			0x0020
++#define TEST_PATTERN_CTRL		0x0024
++#define TEST_PATTERN_SIZE		0x0028
++
++static bool pattern;
++module_param(pattern, bool, 0644);
++MODULE_PARM_DESC(pattern, "Use CSISX4 WDMA internal test pattern generator");
+ 
+ #define CSIS_PAD_SINK			0
+ #define CSIS_PAD_SOURCE			1
+@@ -185,20 +192,22 @@ static int exynos990_csis_link(struct exynos990_csis *csis, bool enable)
+ 
+ 		if (csis->acpm) {
+ 			unsigned long intcam_r, cam_r;
++			int r_intcam, r_cam;
+ 
+-			csis->acpm->ops->dvfs.set_rate(csis->acpm, ACPM_DVFS_CHANNEL,
+-						       ACPM_DVFS_ID_INTCAM,
+-						       690 * HZ_PER_MHZ);
+-			csis->acpm->ops->dvfs.set_rate(csis->acpm, ACPM_DVFS_CHANNEL,
+-						       ACPM_DVFS_ID_CAM,
+-						       690 * HZ_PER_MHZ);
++			r_intcam = csis->acpm->ops->dvfs.set_rate(csis->acpm, ACPM_DVFS_CHANNEL,
++								  ACPM_DVFS_ID_INTCAM,
++								  690 * HZ_PER_MHZ);
++			r_cam = csis->acpm->ops->dvfs.set_rate(csis->acpm, ACPM_DVFS_CHANNEL,
++							       ACPM_DVFS_ID_CAM,
++							       690 * HZ_PER_MHZ);
+ 			intcam_r = csis->acpm->ops->dvfs.get_rate(csis->acpm,
+ 								  ACPM_DVFS_CHANNEL,
+ 								  ACPM_DVFS_ID_INTCAM);
+ 			cam_r = csis->acpm->ops->dvfs.get_rate(csis->acpm,
+ 							       ACPM_DVFS_CHANNEL,
+ 							       ACPM_DVFS_ID_CAM);
+-			dev_info(csis->dev, "ACPM DVFS: INTCAM=%lu kHz CAM=%lu kHz\n",
++			dev_info(csis->dev, "ACPM DVFS: set INTCAM=%d CAM=%d, get INTCAM=%lu CAM=%lu kHz\n",
++				 r_intcam, r_cam,
+ 				 intcam_r / HZ_PER_KHZ, cam_r / HZ_PER_KHZ);
+ 		}
+ 
+@@ -335,6 +344,7 @@ static void exynos990_csis_stop_dma(struct exynos990_csis *csis)
+ 
+ 	spin_lock_irqsave(&csis->buf_lock, flags);
+ 	csis->dma_running = false;
++	writel(1, csis->dma_cmn_regs + DMA_CMN_CTRL); /* DMA_ABORT_REQ */
+ 	writel(0, csis->dma_regs + DMA0_CTRL);
+ 	writel(0, csis->dma_regs + DMA0_FCNTSEQ);
+ 	writel(0, csis->dma_cmn_regs + DMA_INT_MASK);
+@@ -383,11 +393,27 @@ static int exynos990_csis_start_streaming(struct vb2_queue *vq, unsigned int cou
+ 	exynos990_csis_next_buf(csis);
+ 	spin_unlock_irqrestore(&csis->buf_lock, flags);
+ 
+-	ret = v4l2_subdev_call(csis->sensor_sd, video, s_stream, 1);
+-	if (ret) {
+-		exynos990_csis_stop_dma(csis);
+-		exynos990_csis_link(csis, false);
+-		goto err_release;
++	if (pattern) {
++		u32 clk_mhz = 533;
++		u32 vvalid = (csis->pix.width * csis->pix.height) / (clk_mhz * 2);
++		u32 vblank = (1000000 / 30) - vvalid;
++		u32 vblank_size = vblank * clk_mhz;
++
++		writel((0x80 << 16) | (70 << 8) | 0x40,
++		       csis->dma_top_regs + TEST_PATTERN_CTRL);
++		writel((csis->pix.height << 16) | csis->pix.width,
++		       csis->dma_top_regs + TEST_PATTERN_SIZE);
++		writel(BIT(31) | BIT(30) | (vblank_size & GENMASK(29, 0)),
++		       csis->dma_top_regs + TEST_PATTERN_ON);
++		dev_info(csis->dev, "WDMA test pattern enabled (%ux%u @ 30fps)\n",
++			 csis->pix.width, csis->pix.height);
++	} else {
++		ret = v4l2_subdev_call(csis->sensor_sd, video, s_stream, 1);
++		if (ret) {
++			exynos990_csis_stop_dma(csis);
++			exynos990_csis_link(csis, false);
++			goto err_release;
++		}
+ 	}
+ 
+ 	return 0;
+@@ -414,7 +440,10 @@ static void exynos990_csis_stop_streaming(struct vb2_queue *vq)
+ 	struct exynos990_csis *csis = vb2_get_drv_priv(vq);
+ 	unsigned long flags;
+ 
+-	v4l2_subdev_call(csis->sensor_sd, video, s_stream, 0);
++	if (pattern)
++		writel(0, csis->dma_top_regs + TEST_PATTERN_ON);
++	else
++		v4l2_subdev_call(csis->sensor_sd, video, s_stream, 0);
+ 	exynos990_csis_stop_dma(csis);
+ 	exynos990_csis_link(csis, false);
+ 
