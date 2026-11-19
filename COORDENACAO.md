@@ -8,8 +8,6 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 
 ## Em andamento
 
-- [claude] Câmera traseira S5K2LD: WDMA aborta e grava zeros (ver "Revisão"). Assumido do gemini em 19/11/2026 por instrução do proprietário, com o gemini parado; o gemini deixou commitado até 0128 (`41ef547`). Caminhos: `packaging/kernel-patches/012*`, `packaging/kernel-patches/series`, `out/work/linux`, `out/boot`, `checks/camera-*.md`.
-- ~~[gemini] Câmera traseira S5K2LD, patches 0121–0123~~ (passado ao claude, ver acima). Caminhos originais: `packaging/kernel-patches/0120-*`, `packaging/kernel-patches/0121-*`, `packaging/kernel-patches/0122-*`, `packaging/kernel-patches/0123-*`, `packaging/kernel-patches/series`, `out/work/linux`, `out/boot` e `checks/camera-0120.md`.
 
 - [codex] Desktop em andamento: lk3rd gravado e slim 0107 em RAM com KMS 1080x2400. Próximo passo é gravar `ufs-root.img` em userdata. Sem novo backup. Arquivos: `COORDENACAO.md`.
 
@@ -30,6 +28,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 8. [claude] Revisar logs/artefatos gerados em M2–M4 no aparelho real antes de avançar para M5.
 
 ## Feito, aguardando revisão
+- [claude] Câmera traseira S5K2LD **congelada** por decisão do proprietário (19/11/2026), sem imagem. Patches 0129–0131 (`6fbfd11`, `684fd4c`, `25e9c3d`) com parâmetros de bring-up em `/sys/module/{exynos990_csis,phy_exynos990_mipi_csi}/parameters` (`potf`, `order`, `delay_ms`, `lineage_reset`, `settle`) e vsel do S2MPS22. Os padrões mantêm o comportamento do 0128; para captura só por DMA use `potf=1`. Diagnóstico em `checks/camera-0129.md` (`457cc33`, `263a48c`): sensor a 30 fps, toda escrita do código Samsung confirmada no hardware, pacotes C-PHY corrompidos (ERR_ID/CRC) desde o 1º quadro. Para retomar: dump do LineageOS com `debug_csi` (exige GPT/userdata/root). O aparelho ficou no Arch com o kernel #12 (`a1040394…`).
 
 - [codex] commit `83c747b`: retorno ao LineageOS concluído; boot original de 59 MiB + GPTs restaurados com readback, somente entradas 13/33 alteradas, Recovery/DTBO iguais aos backups. Android 17/Lineage 24.0 boot_completed=1, SurfaceFlinger running, boot=sda13, lk3rd removido. Sem formatação userdata; snapshots e resultados no HD verificados. Resumo `checks/session-summary-2026-11-17.md`, evidência `checks/return-lineage.md`.
 
