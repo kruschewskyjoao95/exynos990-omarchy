@@ -33,3 +33,4 @@
 0140-r8s-modem-usi16-spi-cpboot.patch
 0141-r8s-modem-pcie-gen4-root-complex.patch
 0142-r8s-modem-s5123-endpoint-shmem.patch
+0143-r8s-modem-pcie-root-port-bar-masks.patch

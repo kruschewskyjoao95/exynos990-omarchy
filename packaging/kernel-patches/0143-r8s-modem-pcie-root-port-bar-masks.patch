@@ -1,0 +1,37 @@
+Subject: [PATCH] PCI: dwc: exynos990-gen4: disable unused root port BARs
+
+The S5123 doorbell uses PCI address 0x14d60000, in the first MiB of
+the host aperture. On r8s kernel #17 the root port BAR0 takes that
+MiB for itself, ahead of the memory window for its downstream bus.
+
+Disable the root port BAR0 and ROM BAR through the Samsung DBI shadow
+registers, as exynos_pcie_setup_rc() does in LineageOS 97369af7.
+Reapply after the core reset so initial probe and relink agree.
+---
+diff --git a/drivers/pci/controller/dwc/pcie-exynos990-gen4.c b/drivers/pci/controller/dwc/pcie-exynos990-gen4.c
+--- a/drivers/pci/controller/dwc/pcie-exynos990-gen4.c
++++ b/drivers/pci/controller/dwc/pcie-exynos990-gen4.c
+@@ -41,6 +41,9 @@
+ /* PMU: pcie_2 pmu-offset; bit 0 releases the PHY isolation that also fences ELBI/DBI. */
+ #define PMU_PCIE1_PHY_CONTROL		0x720
+ 
++/* Samsung GEN4 BAR mask registers are in the DBI shadow window. */
++#define GEN4_DBI_SHADOW			0x100000
++
+ /* LineageOS exynos_pcie_rc_pcie_phy_config(), chip_ver == 1 (EVT1 GEN4 PHY), in order. */
+ static const u16 gen4_phy_cal[][2] = {
+ 	{ 0x018, 0x50 }, { 0x048, 0x33 }, { 0x068, 0x01 }, { 0x070, 0x12 }, { 0x078, 0x7f },
+@@ -134,6 +137,13 @@
+ 
+ 	dw_pcie_writel_dbi(pci, 0x890, 0x12000);	/* GEN3 EQ off */
+ 
++	/* Leave the start of the host aperture available for the modem doorbell. */
++	dw_pcie_dbi_ro_wr_en(pci);
++	dw_pcie_writel_dbi(pci, GEN4_DBI_SHADOW + PCI_BASE_ADDRESS_0, 0);
++	/* The GEN4 shadow ROM mask is at 0x30, per the Samsung RC setup. */
++	dw_pcie_writel_dbi(pci, GEN4_DBI_SHADOW + 0x30, 0);
++	dw_pcie_dbi_ro_wr_dis(pci);
++
+ 	gpiod_set_value_cansleep(ep->perst, 0);	/* deassert */
+ 	usleep_range(18000, 20000);
+ 
