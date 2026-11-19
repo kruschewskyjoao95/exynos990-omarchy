@@ -105,6 +105,11 @@ index 000000000..000000000 100644
  #include <media/v4l2-async.h>
  #include <media/v4l2-subdev.h>
  
++#define I2C_MODE_BASE		0xF0000000
++#define I2C_MODE_BURST_ADDR	(1 + I2C_MODE_BASE)
++#define I2C_MODE_BURST_DATA	(2 + I2C_MODE_BASE)
++#define I2C_MODE_DELAY		(3 + I2C_MODE_BASE)
++
 +#include "s5k2ld-regs.h"
 +
  #define S5K2LD_REG_CHIP_ID	0x0000
@@ -140,28 +145,35 @@ index 000000000..000000000 100644
  static int s5k2ld_write_reg16(struct i2c_client *client, u16 reg, u16 val)
  {
  	u8 buf[4] = { reg >> 8, reg & 0xff, val >> 8, val & 0xff };
-@@ -50,12 +70,128 @@
+@@ -50,12 +70,134 @@
  	return ret == 4 ? 0 : (ret < 0 ? ret : -EIO);
  }
  
 +static int s5k2ld_write_table(struct i2c_client *client, const u32 *tbl, size_t cnt)
 +{
 +	size_t i;
++	u16 burst_addr = 0x6F12;
 +	int ret;
 +
 +	for (i = 0; i + 2 < cnt; i += 3) {
-+		u16 reg = (u16)tbl[i];
-+		u16 val = (u16)tbl[i + 1];
++		u32 op = tbl[i];
++		u32 val = tbl[i + 1];
 +		u32 width = tbl[i + 2];
 +
-+		if (width == 0xFFFF) {
-+			msleep(val);
++		if (op == I2C_MODE_DELAY) {
++			usleep_range(val, val + 50);
++		} else if (op == I2C_MODE_BURST_ADDR) {
++			burst_addr = (u16)val;
++		} else if (op == I2C_MODE_BURST_DATA) {
++			ret = s5k2ld_write_reg16(client, burst_addr, (u16)val);
++			if (ret)
++				return ret;
 +		} else if (width == 0x01) {
-+			ret = s5k2ld_write_reg8(client, reg, (u8)val);
++			ret = s5k2ld_write_reg8(client, (u16)op, (u8)val);
 +			if (ret)
 +				return ret;
 +		} else {
-+			ret = s5k2ld_write_reg16(client, reg, val);
++			ret = s5k2ld_write_reg16(client, (u16)op, (u16)val);
 +			if (ret)
 +				return ret;
 +		}
