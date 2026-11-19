@@ -32,3 +32,4 @@
 0131-r8s-camera-start-order-knobs-and-phy-defaults.patch
 0140-r8s-modem-usi16-spi-cpboot.patch
 0141-r8s-modem-pcie-gen4-root-complex.patch
+0142-r8s-modem-s5123-endpoint-shmem.patch

@@ -1,0 +1,290 @@
+From: Claude <noreply@anthropic.com>
+Subject: [PATCH] r8s: S5123 modem endpoint driver, CP shared memory, ramoops move, relink retry
+
+- dts: reserve the CP shared memory at the LineageOS addresses
+  (cp_rmem 0xf0000000 8M, cp_msi_rmem 0xf6200000 4K, cp_rmem_2 0xd0000000
+  32M on r8s), no-map, and describe them in a samsung,s5123-modem node.
+  ramoops moves from 0xf0000000 (overlapping cp_rmem) to 0xf5000000,
+  a gap no LineageOS or port reservation uses.
+- soc/samsung/s5123-modem: PCI driver for the classless 144d:a5a5
+  endpoint. As s51xx_pcie_probe(), it programs BAR0 itself inside the
+  root port window, clears BAR2-5 and maps the doorbell at BAR0+0x60000;
+  as s5100_poweron_pcie(), it opens each region RW in the HSI2 S2MPU via
+  HVC 0xc6000100 (index 25 = "hsi2", ATTR_RW).
+- pcie-exynos990-gen4: relink retries up to 10 times like
+  establish_link(); the first try right after boot could time out.
+
+Tested on r8s kernel #17 (b165efd5): ramoops at 0xf5000000 registered,
+the three CP regions reserved, S2MPU grants return 0, and modem-up.sh
+binds s5123-modem on 0001:01:00.0 on the first attempt after boot
+(BAR0 bus 0x14f00000, doorbell 0x14260000).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+diff --git a/drivers/soc/samsung/s5123-modem.c b/drivers/soc/samsung/s5123-modem.c
+new file mode 100644
+--- /dev/null
++++ b/drivers/soc/samsung/s5123-modem.c
+@@ -0,0 +1,147 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Samsung Shannon S5123 modem: PCIe endpoint side (r8s / Exynos 990).
++ *
++ * First piece of the AP<->CP transport, written from the LineageOS
++ * universal9830 cpif sources (97369af7):
++ *  - s51xx_pcie_probe(): the endpoint is classless (class 0x000000), so the
++ *    PCI core never assigns its BARs; the driver programs BAR0 itself inside
++ *    the root port window and rings the CP through a doorbell register at
++ *    BAR0 + (pci_db_addr - BAR0) = BAR0 + 0x60000.
++ *  - s5100_poweron_pcie(): every CP shared-memory region is opened read/write
++ *    in the HSI2 stage-2 MPU through the Samsung hypervisor
++ *    (exynos_set_dev_stage2_ap("hsi2", 0, base, size, ATTR_RW)).
++ */
++
++#include <linux/arm-smccc.h>
++#include <linux/io.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/of_address.h>
++#include <linux/pci.h>
++#include <linux/sizes.h>
++
++#define S5123_BAR0_SIZE		SZ_1M
++
++/* include/soc/samsung/exynos-s2mpu.h in LineageOS: HVC_FID_BASE + 0x100, index of "hsi2". */
++#define EXYNOS_HVC_SET_S2MPU	0xc6000100UL
++#define EXYNOS_S2MPU_HSI2	25UL
++#define EXYNOS_S2MPU_ATTR_RW	3UL
++
++static const char * const s5123_region_names[] = { "ipc", "msi", "pktproc" };
++
++struct s5123 {
++	struct pci_dev *pdev;
++	void __iomem *doorbell;
++	struct resource shmem[ARRAY_SIZE(s5123_region_names)];
++};
++
++static int s5123_grant_shmem(struct device *dev, struct device_node *np, struct s5123 *mdm)
++{
++	struct arm_smccc_res res;
++	int i, ret;
++
++	for (i = 0; i < ARRAY_SIZE(s5123_region_names); i++) {
++		struct device_node *rn = of_parse_phandle(np, "memory-region", i);
++
++		if (!rn)
++			return dev_err_probe(dev, -EINVAL, "missing memory-region %s\n",
++					     s5123_region_names[i]);
++		ret = of_address_to_resource(rn, 0, &mdm->shmem[i]);
++		of_node_put(rn);
++		if (ret)
++			return ret;
++
++		arm_smccc_hvc(EXYNOS_HVC_SET_S2MPU, EXYNOS_S2MPU_HSI2, mdm->shmem[i].start,
++			      resource_size(&mdm->shmem[i]), EXYNOS_S2MPU_ATTR_RW, 0, 0, 0, &res);
++		dev_info(dev, "shmem %s %pR: S2MPU hsi2 RW -> %#lx\n",
++			 s5123_region_names[i], &mdm->shmem[i], res.a0);
++	}
++	return 0;
++}
++
++static int s5123_probe(struct pci_dev *pdev, const struct pci_device_id *id)
++{
++	struct device *dev = &pdev->dev;
++	struct pci_dev *port = pdev->bus->self;
++	struct resource *win;
++	struct pci_bus_region bus;
++	struct device_node *np;
++	struct s5123 *mdm;
++	u32 db_off, bar0;
++	u16 cmd;
++	int i, ret;
++
++	if (pdev->hdr_type != PCI_HEADER_TYPE_NORMAL || !port)
++		return -ENODEV;
++
++	np = of_find_compatible_node(NULL, NULL, "samsung,s5123-modem");
++	if (!np)
++		return dev_err_probe(dev, -ENODEV, "no samsung,s5123-modem node\n");
++
++	mdm = devm_kzalloc(dev, sizeof(*mdm), GFP_KERNEL);
++	if (!mdm) {
++		ret = -ENOMEM;
++		goto out_put;
++	}
++	mdm->pdev = pdev;
++
++	ret = of_property_read_u32(np, "samsung,doorbell-offset", &db_off);
++	if (ret || db_off + 4 > S5123_BAR0_SIZE) {
++		ret = dev_err_probe(dev, -EINVAL, "bad samsung,doorbell-offset\n");
++		goto out_put;
++	}
++
++	ret = s5123_grant_shmem(dev, np, mdm);
++	if (ret)
++		goto out_put;
++
++	win = &port->resource[PCI_BRIDGE_MEM_WINDOW];
++	if (!win->start || resource_size(win) < S5123_BAR0_SIZE) {
++		ret = dev_err_probe(dev, -ENOSPC, "root port window %pR too small\n", win);
++		goto out_put;
++	}
++	pcibios_resource_to_bus(pdev->bus, &bus, win);
++
++	/* BAR0 is 64-bit (BAR0+BAR1); clear BAR2-5 as s51xx_pcie_probe() does. */
++	pci_write_config_dword(pdev, PCI_BASE_ADDRESS_0,
++			       lower_32_bits(bus.start) | PCI_BASE_ADDRESS_MEM_TYPE_64);
++	pci_write_config_dword(pdev, PCI_BASE_ADDRESS_1, upper_32_bits(bus.start));
++	for (i = PCI_BASE_ADDRESS_2; i <= PCI_BASE_ADDRESS_5; i += 4)
++		pci_write_config_dword(pdev, i, 0);
++	pci_read_config_dword(pdev, PCI_BASE_ADDRESS_0, &bar0);
++
++	pci_read_config_word(pdev, PCI_COMMAND, &cmd);
++	pci_write_config_word(pdev, PCI_COMMAND, cmd | PCI_COMMAND_MEMORY | PCI_COMMAND_MASTER);
++
++	mdm->doorbell = devm_ioremap(dev, win->start + db_off, 4);
++	if (!mdm->doorbell) {
++		ret = -ENOMEM;
++		goto out_put;
++	}
++
++	pci_set_drvdata(pdev, mdm);
++	dev_info(dev, "S5123 endpoint: BAR0 bus %#x (window %pR), doorbell at %pa\n",
++		 bar0 & PCI_BASE_ADDRESS_MEM_MASK, win, &(phys_addr_t){ win->start + db_off });
++	ret = 0;
++out_put:
++	of_node_put(np);
++	return ret;
++}
++
++static const struct pci_device_id s5123_ids[] = {
++	/* Class 0 keeps the GEN4 root port (also 144d:a5a5, class 0x0604) out. */
++	{ PCI_DEVICE(PCI_VENDOR_ID_SAMSUNG, 0xa5a5), .class = 0, .class_mask = 0xffffff },
++	{ }
++};
++MODULE_DEVICE_TABLE(pci, s5123_ids);
++
++static struct pci_driver s5123_driver = {
++	.name = "s5123-modem",
++	.id_table = s5123_ids,
++	.probe = s5123_probe,
++};
++module_pci_driver(s5123_driver);
++
++MODULE_DESCRIPTION("Samsung Shannon S5123 modem PCIe endpoint");
++MODULE_LICENSE("GPL");
+diff --git a/arch/arm64/boot/dts/exynos/exynos990-r8s.dts b/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
+--- a/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
++++ b/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
+@@ -166,18 +166,49 @@
+ 		 * doing: the backtrace is delivered by IPI and a dead core cannot
+ 		 * answer one. pstore's ftrace zone is per-CPU and written by the
+ 		 * tracer itself, so the dead core's last function calls are still
+-		 * there after the reset. The region below is free up to the
+-		 * framebuffer at 0xf1000000.
++		 * there after the reset. 0xf0000000 belongs to the S5123 modem IPC
++		 * region (LineageOS cp_rmem), so the log lives in the gap between
++		 * Samsung's 0xf4200000-0xf4a00000 and cp_msi_rmem at 0xf6200000.
+ 		 */
+-		ramoops@f0000000 {
++		ramoops@f5000000 {
+ 			compatible = "ramoops";
+-			reg = <0 0xf0000000 0 0x400000>;
++			reg = <0 0xf5000000 0 0x400000>;
+ 			console-size = <0x40000>;
+ 			record-size = <0x20000>;
+ 			ftrace-size = <0x300000>;
+ 			pmsg-size = <0x20000>;
+ 			ecc = <0>;
+ 		};
++
++		/*
++		 * Shannon S5123 shared memory at the LineageOS addresses
++		 * (exynos9830-rmem.dtsi cp_rmem/cp_msi_rmem, cp_rmem_2 resized to
++		 * 32 MiB by exynos990-r8s_eur_open_05.dts). The CP may expect them
++		 * fixed, so they are not moved.
++		 */
++		cp_ipc_rmem: modem-ipc@f0000000 {
++			reg = <0 0xf0000000 0 0x800000>;
++			no-map;
++		};
++
++		cp_msi_rmem: modem-msi@f6200000 {
++			reg = <0 0xf6200000 0 0x1000>;
++			no-map;
++		};
++
++		cp_pktproc_rmem: modem-pktproc@d0000000 {
++			reg = <0 0xd0000000 0 0x2000000>;
++			no-map;
++		};
++	};
++
++	/* Shannon S5123 modem: shared memory handed to the PCIe endpoint driver. */
++	modem: modem {
++		compatible = "samsung,s5123-modem";
++		memory-region = <&cp_ipc_rmem>, <&cp_msi_rmem>, <&cp_pktproc_rmem>;
++		memory-region-names = "ipc", "msi", "pktproc";
++		/* PCIe doorbell register offset inside BAR0 (LineageOS pci_db_addr 0x14d60000). */
++		samsung,doorbell-offset = <0x60000>;
+ 	};
+ 
+ 	/*
+diff --git a/drivers/soc/samsung/Kconfig b/drivers/soc/samsung/Kconfig
+--- a/drivers/soc/samsung/Kconfig
++++ b/drivers/soc/samsung/Kconfig
+@@ -77,6 +77,13 @@
+ 	depends on ARCH_EXYNOS || COMPILE_TEST
+ endif
+ 
++config S5123_MODEM
++	tristate "Samsung Shannon S5123 modem (PCIe endpoint)"
++	depends on PCI && ARM64 && OF
++	help
++	  PCIe endpoint side of the Shannon S5123 modem on Exynos 990 phones:
++	  BAR0/doorbell setup and HSI2 S2MPU access for the CP shared memory.
++
+ config EXYNOS990_CPU_WAKE
+ 	bool "Exynos 990 CPU wake-interrupt routing for power-down"
+ 	depends on ARCH_EXYNOS && ARM64
+diff --git a/drivers/soc/samsung/Makefile b/drivers/soc/samsung/Makefile
+--- a/drivers/soc/samsung/Makefile
++++ b/drivers/soc/samsung/Makefile
+@@ -14,3 +14,4 @@
+ 
+ obj-$(CONFIG_SAMSUNG_PM_CHECK)	+= s3c-pm-check.o
+ obj-$(CONFIG_EXYNOS990_CPU_WAKE) += exynos990-cpu-wake.o
++obj-$(CONFIG_S5123_MODEM) += s5123-modem.o
+diff --git a/drivers/pci/controller/dwc/pcie-exynos990-gen4.c b/drivers/pci/controller/dwc/pcie-exynos990-gen4.c
+--- a/drivers/pci/controller/dwc/pcie-exynos990-gen4.c
++++ b/drivers/pci/controller/dwc/pcie-exynos990-gen4.c
+@@ -229,13 +229,22 @@
+ 
+ 	gen4_stop_link(&ep->pci);
+ 	if (on) {
+-		gen4_hw_init(ep);
+-		ret = dw_pcie_setup_rc(pp);
+-		list_for_each_entry(root, &bus->devices, bus_list)
+-			pci_restore_state(root);
+-		if (!ret) {
+-			gen4_start_link(&ep->pci);
+-			ret = dw_pcie_wait_for_link(&ep->pci);
++		int try;
++
++		/* establish_link() retries up to 10 times; the first try after boot can miss. */
++		for (try = 0; try < 10; try++) {
++			gen4_hw_init(ep);
++			ret = dw_pcie_setup_rc(pp);
++			list_for_each_entry(root, &bus->devices, bus_list)
++				pci_restore_state(root);
++			if (!ret) {
++				gen4_start_link(&ep->pci);
++				ret = dw_pcie_wait_for_link(&ep->pci);
++			}
++			if (!ret)
++				break;
++			gen4_stop_link(&ep->pci);
++			gpiod_set_value_cansleep(ep->perst, 1);
+ 		}
+ 		if (!ret)
+ 			pci_rescan_bus(bus);

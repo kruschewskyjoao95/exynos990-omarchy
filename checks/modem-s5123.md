@@ -114,7 +114,17 @@ O LineageOS reserva (`exynos9830-rmem.dtsi`, compatível `exynos,modem_if`):
 | `cp_msi_rmem` | `0xF6200000` | 4 KiB | 1 |
 | `cp_rmem_2` (PKTPROC) | `0xD0000000` | 32 MiB no r8s (`exynos990-r8s_eur_open_05.dts`), 64 MiB na base | 2 |
 
-**Conflito:** o port reserva `ramoops@f0000000` (4 MiB) no `exynos990-r8s.dts:172`, em cima do `cp_rmem`. Não se sabe se o firmware do CP espera esses endereços fixos. Decisão proposta: manter os endereços Samsung e mudar o `ramoops` de lugar antes de reservar as regiões do CP.
+**Conflito resolvido no 0142:** o `ramoops` (antes em `0xf0000000`, em cima do `cp_rmem`) foi para `0xf5000000`, uma faixa sem reserva no LineageOS nem no port. As três regiões do CP ficaram nos endereços Samsung, com `no-map`.
+
+## Marco 4a, passo 2: driver do endpoint e memória compartilhada (feito; kernel #17, 0142 `b165efd5…`)
+
+- **No boot:** `ramoops: using 0x400000@0xf5000000`, e as reservas `modem-ipc@f0000000` (8 MiB), `modem-msi@f6200000` (4 KiB) e `modem-pktproc@d0000000` (32 MiB), todas `nomap`, sem WARN.
+- **`packaging/modem/modem-up.sh`** (instalado em `/usr/local/lib/r8s-modem/`): power-on, BOOT por SPI, checagem de `CP2AP_WAKEUP`, `AP2CP_WAKEUP` e `relink`. Agora com até 10 tentativas, como no `establish_link()`; a primeira tentativa logo após o boot dera timeout uma vez no #16. O `modem-down.sh` desliga tudo.
+- **`s5123-modem`** se liga a `0001:01:00.0` na primeira tentativa:
+  - S2MPU `hsi2` RW nas três regiões, todas com HVC `0xc6000100` → `0x0`;
+  - BAR0 no barramento em `0x14f00000`, dentro da janela `[mem 0x14200000-0x147fffff]`;
+  - doorbell em `0x14260000`;
+  - `lspci -k`: `Kernel driver in use: s5123-modem`.
 
 ## Próximos marcos
 
