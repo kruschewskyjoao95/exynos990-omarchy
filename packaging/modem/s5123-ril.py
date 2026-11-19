@@ -251,7 +251,7 @@ class Data:
     def configure(self):
         ip = "%d.%d.%d.%d" % tuple(self.st.ip4)
         for cmd in (["ip", "addr", "flush", "dev", "rmnet0"], ["ip", "addr", "add", ip + "/32", "dev", "rmnet0"],
-                    ["ip", "link", "set", "rmnet0", "mtu", "1400", "up"],
+                    ["ip", "link", "set", "rmnet0", "mtu", os.environ.get("R8S_MTU", "1400"), "up"],
                     ["ip", "route", "replace", "default", "dev", "rmnet0", "metric", "900"]):
             subprocess.run(cmd, check=True)
         log("rmnet0 up (address from the CP), default route metric 900 (Wi-Fi keeps priority)")
@@ -262,7 +262,7 @@ class Data:
                 pkt = os.read(self.tun, 2048)
             except BlockingIOError:
                 break
-            if self.up < 12:
+            if self.up < int(os.environ.get("R8S_PKTLOG", "12")):
                 log("UL " + self.describe(pkt))
             if self.send(pkt):
                 self.up += 1
@@ -298,13 +298,21 @@ class Data:
     @staticmethod
     def describe(pkt):
         if pkt[:1] and pkt[0] >> 4 == 4 and len(pkt) >= 20:
-            return "v4 proto %d len %d %d.x->%d.x" % (pkt[9], len(pkt), pkt[12], pkt[16])
+            ihl, tot = (pkt[0] & 15) * 4, pkt[2] << 8 | pkt[3]
+            t = pkt[ihl:]
+            extra = ""
+            if pkt[9] == 6 and len(t) >= 14:
+                extra = " %d->%d flags %s" % (t[0] << 8 | t[1], t[2] << 8 | t[3],
+                                               "".join(c for b, c in zip((1, 2, 4, 8, 16), "FSRPA") if t[13] & b))
+            elif pkt[9] == 1 and len(t) >= 2:
+                extra = " icmp type %d code %d" % (t[0], t[1])
+            return "v4 proto %d len %d (ip len %d) %d.x->%d.x%s" % (pkt[9], len(pkt), tot, pkt[12], pkt[16], extra)
         if pkt[:1] and pkt[0] >> 4 == 6 and len(pkt) >= 40:
             return "v6 next %d len %d" % (pkt[6], len(pkt))
         return "? %d B %s" % (len(pkt), pkt[:8].hex())
 
     def deliver(self, pkt):
-        if self.down < 12:
+        if self.down < int(os.environ.get("R8S_PKTLOG", "12")):
             log("DL " + self.describe(pkt))
         try:
             os.write(self.tun, pkt)

@@ -177,3 +177,6 @@ Transporte, achados no aparelho:
   - HTTPS falhou em 0,4 s;
   - ping ICMP (1.1.1.1 e 8.8.8.8) sem resposta;
   - o contexto caiu com causa 2 (desativação regular) quando o daemon pôs o rádio em baixo consumo no fim.
+- **Pacotes rastreados pelo daemon (`R8S_PKTLOG`):** SYN e SYN-ACK passam e o ACK sobe. Depois do primeiro segmento com dados chega RST da rede, e alguns destinos nem respondem ao SYN. Nenhum ICMP desce. Com MTU 1280 o comportamento é o mesmo.
+- **Todo HTTP é redirecionado:** `example.com` e `neverssl.com` devolvem `302 Found`, `Location: http://wcad.tim.com.br/`. Esse é o portal de bloqueio da TIM (linha sem pacote de dados ativo ou franquia esgotada, a confirmar pelo proprietário).
+- **Conclusão (observado):** o plano de dados do Linux funciona de ponta a ponta até a rede da TIM. O que sobra está do lado da operadora/linha. A falta de PCO/IPv6 (pedimos só IPv4) não foi descartada.
