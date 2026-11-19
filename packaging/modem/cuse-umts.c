@@ -12,7 +12,7 @@
  *   write()          bootdump_write(): SIPC5 frame (0xF8|pad, ch 215, len16 incl. header, padded
  *                    to 4) on the legacy RAW TX queue, then pcie_send_ap2cp_irq(): ap2cp_msg =
  *                    mask2int(MASK_SEND_RAW) and the doorbell with int_ap2cp_msg
- *   read()/poll()    frames from the legacy RAW RX queue (polled: no MSI yet), header stripped
+ *   read()/poll()    frames from the legacy RAW RX queue (polled), header stripped
  *   REQ_SECURITY     -EINVAL (security_req is NULL for LINKDEV_PCIE)
  * Everything is logged as hex to the trace file.
  *
@@ -50,6 +50,9 @@
 #define CH_DUMP		225
 #define INT_AP2CP_MSG	0
 #define MASK_SEND_RAW_IRQ (0x80 | 0x01)
+#define PCIE_MSI_ADDR_LO 0x820
+#define PCIE_MSI_ADDR_HI 0x824
+#define CP_MSI_ADDR	0xf6200000u
 
 enum { ST_OFFLINE, ST_CRASH_RESET, ST_CRASH_EXIT, ST_BOOTING, ST_ONLINE };
 
@@ -174,7 +177,13 @@ static int start_normal_boot(void)
 	tlog("  IOCC: dbi 0x8e8=%#x sysreg 0x704=%#x\n", *(volatile uint32_t *)(dbi + 0x8e8),
 	     *(volatile uint32_t *)(sysreg + 0x704));
 	/* s51xx_pcie_probe(): BAR0 = pci_db_addr exactly; the CP decodes only around it. */
-	return sh("setpci -s 0001:01:00.0 BASE_ADDRESS_0=0x14d60000 BASE_ADDRESS_1=0") ? -EIO : 0;
+	if (sh("setpci -s 0001:01:00.0 BASE_ADDRESS_0=0x14d60000 BASE_ADDRESS_1=0"))
+		return -EIO;
+	/* The CP needs MSI configured even when the host polls the RX queue. */
+	*(volatile uint32_t *)(dbi + PCIE_MSI_ADDR_LO) = CP_MSI_ADDR;
+	*(volatile uint32_t *)(dbi + PCIE_MSI_ADDR_HI) = 0;
+	return sh("setpci -s 0001:01:00.0 CAP_MSI+4.L=f6200000 CAP_MSI+8.W=0000 CAP_MSI+2.W=0021:0071")
+		? -EIO : 0;
 }
 
 static void u_open(fuse_req_t req, struct fuse_file_info *fi)
@@ -189,12 +198,21 @@ static void u_release(fuse_req_t req, struct fuse_file_info *fi)
 	fuse_reply_err(req, 0);
 }
 
+/* SIPC5 aligns padded frames to the target kernel's 64-bit word size. */
+static uint32_t sipc5_padding(uint32_t len)
+{
+	return (8 - len % 8) % 8;
+}
+
 static void u_write(fuse_req_t req, const char *buf, size_t size, off_t off, struct fuse_file_info *fi)
 {
-	uint32_t len = size + 4, pad = (4 - len % 4) % 4, head, i;
+	uint32_t len = size + 4, pad = sipc5_padding(len), head, i;
 	uint8_t hdr[4] = { 0xF8 | 0x04, (uint8_t)channel, (uint8_t)len, (uint8_t)(len >> 8) };
 
-	thex("AP->CP write", (const uint8_t *)buf, size);
+	if (size == 4)
+		thex("AP->CP write", (const uint8_t *)buf, size);
+	else
+		tlog("AP->CP write %zu B\n", size);
 	if (len > 0xFFFF) {
 		tlog("  frame too long for a 16-bit SIPC5 length\n");
 		fuse_reply_err(req, EMSGSIZE);
@@ -244,7 +262,7 @@ static void u_read(fuse_req_t req, size_t size, off_t off, struct fuse_file_info
 		fuse_reply_err(req, EIO);
 		return;
 	}
-	pad = (rx_byte(tail, 0) & 0x04) ? (4 - len % 4) % 4 : 0;
+	pad = (rx_byte(tail, 0) & 0x04) ? sipc5_padding(len) : 0;
 	out = malloc(len);
 	for (i = 0; i < len; i++)
 		out[i] = rx_byte(tail, i);
