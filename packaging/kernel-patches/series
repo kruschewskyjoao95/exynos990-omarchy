@@ -21,3 +21,4 @@
 0120-r8s-s5k2ld-cphy-capture.patch
 0121-r8s-camera-hsi2c-fifo.patch
 0122-r8s-arm-wdma-before-sensor.patch
+0123-r8s-camera-phy-reset-and-wdma-otf.patch

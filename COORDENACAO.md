@@ -4,11 +4,15 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 
 ## Estado atual do aparelho
 
-17/11/2026: **LineageOS restaurado e boot completo confirmado; lk3rd removido.** Boot voltou a `sda13` (59 MiB); o slot dividido `sda33` foi removido da GPT. Nenhum Arch/Omarchy instalado. USB liberado após encerrar a restauração. Os registros de lk3rd/slim abaixo são históricos; não reutilizar o mapa dividido como estado atual. Alerta UFS de vida estimada permanece preexistente. Evidência: `checks/return-lineage.md`.
+17/11/2026, retomada: **lk3rd gravado de novo e Linux 0107 em RAM.** Backup Lineage conferido antes da escrita (local e HD, boot ao vivo igual a `stock-boot.img`); nenhum backup novo. GPT outra vez dividida: `sda13`=2 MiB lk3rd, `sda33`=57 MiB, `sda32`=userdata. Slim no console USB; tela KMS 1080x2400 ligada, toque Zinitix enumerado. Userdata ainda não gravada. O backup de boot continua o caminho de volta.
 
 ## Em andamento
 
-- [codex] Investigar saúde UFS 0x0B: cruzar log Samsung preservado com sysfs mainline e fonte Lineage fixada; sem comandos de escrita/reset/flash no telefone. Caminhos: `research/ufs-health.md`, `checks/ufs-clocks-ram.md`, `research/ufs-clocks-fixes.md`, `out/validation/ufs-health/`.
+- [gemini] Câmera traseira S5K2LD, patches 0121–0123 (fix C-PHY reset order + WDMA OTF/UPDT_PTR_EN), build UFS e teste de captura (assumido após encerramento do codex por instrução do proprietário). Caminhos: `packaging/kernel-patches/0120-*`, `packaging/kernel-patches/0121-*`, `packaging/kernel-patches/0122-*`, `packaging/kernel-patches/0123-*`, `packaging/kernel-patches/series`, `out/work/linux`, `out/boot` e `checks/camera-0120.md`.
+
+- [codex] Desktop em andamento: lk3rd gravado e slim 0107 em RAM com KMS 1080x2400. Próximo passo é gravar `ufs-root.img` em userdata. Sem novo backup. Arquivos: `COORDENACAO.md`.
+
+
 
 
 
