@@ -13,20 +13,19 @@ diff --git a/arch/arm64/boot/dts/exynos/exynos990.dtsi b/arch/arm64/boot/dts/exy
 index 000000000..000000000 100644
 --- a/arch/arm64/boot/dts/exynos/exynos990.dtsi
 +++ b/arch/arm64/boot/dts/exynos/exynos990.dtsi
-@@ -1091,6 +1091,16 @@
- 		 */
- 		clock-frequency = <26000000>;
- 	};
-+
-+		mipi_phy_csis0: phy@170d1300 {
-+			compatible = "samsung,mipi-phy-m0s4s4s4s4s4s2";
-+			reg = <0x170d1300 0x500>;
-+			samsung,pmu-syscon = <&pmu_system_controller>;
-+			isolation = <0x730>;
-+			vdd-0p85-supply = <&vdd_mipi_csi_0p85>;
-+			vdd-1p8-supply = <&vdd_mipi_csi_1p8>;
-+			#phy-cells = <1>;
-+		};
+@@ -1093,6 +1093,18 @@
  };
  
  #include "exynos990-pinctrl.dtsi"
++
++&soc {
++	mipi_phy_csis0: phy@170d1300 {
++		compatible = "samsung,mipi-phy-m0s4s4s4s4s4s2";
++		reg = <0x170d1300 0x500>;
++		samsung,pmu-syscon = <&pmu_system_controller>;
++		isolation = <0x730>;
++		vdd-0p85-supply = <&vdd_mipi_csi_0p85>;
++		vdd-1p8-supply = <&vdd_mipi_csi_1p8>;
++		#phy-cells = <1>;
++	};
++};
