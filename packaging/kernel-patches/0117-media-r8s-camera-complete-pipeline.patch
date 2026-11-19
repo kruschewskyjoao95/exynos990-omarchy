@@ -557,17 +557,7 @@ index 000000000..000000000 100644
  	csis->pix.sizeimage = csis->pix.bytesperline * csis->pix.height;
  	csis->pix.field = V4L2_FIELD_NONE;
  	csis->pix.colorspace = V4L2_COLORSPACE_RAW;
-@@ -395,7 +450,8 @@
- 	csis->phy = devm_phy_get(dev, "csis_dphy");
- 	if (IS_ERR(csis->phy))
- 		return dev_err_probe(dev, PTR_ERR(csis->phy),
--				     "failed to get csis_dphy\n");
-+				     "failed to get csis_dphy
-+");
- 
- 	irq = platform_get_irq(pdev, 0);
- 	if (irq < 0)
-@@ -427,6 +483,7 @@
+@@ -427,6 +482,7 @@
  	csis->sd.owner = THIS_MODULE;
  	snprintf(csis->sd.name, sizeof(csis->sd.name), "exynos990-csis");
  	csis->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
@@ -575,7 +565,7 @@ index 000000000..000000000 100644
  	csis->sd.dev = dev;
  
  	csis->pads[CSIS_PAD_SINK].flags = MEDIA_PAD_FL_SINK;
-@@ -478,9 +535,29 @@
+@@ -478,9 +534,27 @@
  	if (ret)
  		goto err_unreg_vdev;
  
@@ -589,15 +579,13 @@ index 000000000..000000000 100644
 +			csis->notifier.ops = &exynos990_csis_notify_ops;
 +			ret = v4l2_async_nf_register(&csis->notifier);
 +			if (ret)
-+				dev_warn(dev, "async nf register failed: %d
-+", ret);
++				dev_warn(dev, "async nf register failed: %d\n", ret);
 +		}
 +	}
 +
 +	ret = v4l2_device_register_subdev_nodes(&csis->v4l2_dev);
 +	if (ret)
-+		dev_warn(dev, "register subdev nodes failed: %d
-+", ret);
++		dev_warn(dev, "register subdev nodes failed: %d\n", ret);
 +
  	ret = media_device_register(&csis->mdev);
  	if (ret)
@@ -606,16 +594,7 @@ index 000000000..000000000 100644
  
  	platform_set_drvdata(pdev, csis);
  	pm_runtime_enable(dev);
-@@ -488,13 +565,17 @@
- 	ret = pm_runtime_resume_and_get(dev);
- 	if (ret >= 0) {
- 		version = readl(csis->regs + CSIS_VERSION);
--		dev_info(dev, "Exynos 990 CSIS version 0x%08x (/dev/%s)\n",
-+		dev_info(dev, "Exynos 990 CSIS version 0x%08x (/dev/%s)
-+",
- 			 version, video_device_node_name(&csis->vdev));
- 		pm_runtime_put(dev);
- 	}
+@@ -495,6 +569,9 @@
  
  	return 0;
  
@@ -625,7 +604,7 @@ index 000000000..000000000 100644
  err_unreg_vdev:
  	video_unregister_device(&csis->vdev);
  err_vdev_entity:
-@@ -515,6 +596,8 @@
+@@ -515,6 +592,8 @@
  	struct exynos990_csis *csis = platform_get_drvdata(pdev);
  
  	pm_runtime_disable(&pdev->dev);
