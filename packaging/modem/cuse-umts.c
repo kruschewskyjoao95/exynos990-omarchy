@@ -48,7 +48,7 @@
 #define MAGIC_BOOT	0x424F4F54u
 #define CH_BOOT		215
 #define CH_DUMP		225
-#define INT_AP2CP_MSG	0
+#define INT_AP2CP_MSG	(0x10000 | 0)	/* int_ap2cp_msg 0 + DOORBELL_INT_ADD (cpif include/legacy.h) */
 #define MASK_SEND_RAW_IRQ (0x80 | 0x01)
 #define PCIE_MSI_ADDR_LO 0x820
 #define PCIE_MSI_ADDR_HI 0x824

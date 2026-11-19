@@ -10,7 +10,7 @@ print = functools.partial(print, flush=True)
 IPC_BASE, IPC_SIZE = 0xF0000000, 0x800000
 DOORBELL = 0x14260000            # s5123-modem: root port window + 0x60000 (dmesg)
 MAGIC_BOOT = 0x424F4F54
-INT_AP2CP_MSG, INT_PCIE_LINK_ACK = 0, 14
+INT_AP2CP_MSG, INT_PCIE_LINK_ACK = 0x10000 | 0, 0x10000 | 14   # + DOORBELL_INT_ADD (cpif legacy.h)
 FMT_HT, FMT_BUF, FMT_TXQ, FMT_RXQ = 0x8, 0x1000, 0x1000, 0x1000
 RAW_HT, RAW_BUF, RAW_TXQ, RAW_RXQ = 0x18, 0x3000, 0x1FD000, 0x200000
 D = os.path.dirname(os.path.abspath(__file__))
