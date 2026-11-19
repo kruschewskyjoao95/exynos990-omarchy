@@ -125,3 +125,21 @@ Transporte, achados no aparelho:
 - **Campo de tamanho:** `buff_len_array` traz o canal nos bits 16–23 (`0x00eb001d` = canal 235, 29 B).
 - **Após 20 s:** `cp2ap_wakeup` ficou inativo, com `phone_active` ativo. Nenhum quadro apareceu no RFS (canal 245) nem nos canais de dados.
 - **Próximo passo (proposta):** responder às mensagens IPC (energia, SIM e rede) por um daemon nativo que use o transporte SBD. Referência: Scion `hakios.shannon.c` (MIT-0), que implementa a mesma família IPC no Shannon do Galaxy S9, com SIM, registro e PDP `0x0D`. Os dados virão depois, por PKTPROC.
+
+### Registro na rede pelo daemon nativo (19/11/2026, kernel #18, sem flash)
+
+- **Testado neste aparelho:** `packaging/modem/s5123-ril.py` sobe antes do `cbd` e faz o handshake (`INIT_START` → `PIF_INIT_DONE`, `PHONE_START` → `init_legacy_link` + `INIT_END`). Depois fala IPC Samsung no anel SBD do FMT, seguindo a lógica de Scion `hakios.shannon.c` (MIT-0):
+  - baixo consumo na fila antes do `INIT_END`;
+  - versão;
+  - modo normal;
+  - retorno ao baixo consumo antes de desligar.
+- **NV:** os pedidos NV do RFS são atendidos por uma cópia em RAM do `nv_data.bin`, nunca a EFS real. Neste ensaio o CP não fez nenhum pedido RFS.
+- **Resultado:**
+  - versão `G780FXXSOFYJ1` / `REV0.3`;
+  - modo normal aceito (resposta geral `0x8000`, PHONE STATE 2);
+  - SIM `0x82` (READY), depois `0x83` (phonebook ready);
+  - **REGISTRATION state 2 (HOME)**, tecnologia 4, nos domínios 2 e 3;
+  - rede servidora `72402`;
+  - sinal de 4 barras, -74 a -80 dBm.
+- **Escritas não alinhadas:** em `/dev/mem` com `O_SYNC` (memória de dispositivo), uma cópia com `memcpy` de tamanho ímpar dá `SIGBUS`. O daemon copia em palavras alinhadas.
+- **Mensagens retidas:** entre 12 s e 99 s nenhuma mensagem DL chegou. Todas foram entregues juntas logo depois do próximo pedido do AP. Hipótese (proposta): o CP espera `pcie_link_ack` (doorbell `0x1000e`) depois de subir `cp2ap_wakeup`, como em `s5100_poweron_pcie()`. Sem isso, ele segura as mensagens.
