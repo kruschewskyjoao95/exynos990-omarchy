@@ -1,0 +1,84 @@
+From: Claude <noreply@anthropic.com>
+Subject: [PATCH] arm64: dts: exynos990: USI16 SPI boot channel for the Shannon S5123 modem
+
+Add the PERIC1 USI16 block in SPI mode (sysreg_peric1 + 0x1048) with the
+exynos850-spi controller at 0x10960000 (IRQ 434, LineageOS spi_16) and a
+spidev child on CS0 at 2.15 MHz (LineageOS cpboot_spi@0), using the
+existing spi16_bus/spi16_cs_func pin groups.
+
+USI SPI has no prescaler and divides ipclk by 4. CMU_PERIC1 is not
+modelled, so the clock is a fixed 8.67 MHz that userspace must provide by
+selecting OSC 26 MHz (0x10700690 bit 4 = 0) and DIVRATIO 2 (0x10701820).
+
+Tested on r8s kernel #13: sending the radio BOOT section (64400 B) over
+/dev/spidev0.0 after the power_on_cp() GPIO sequence makes the CP drive
+ps_hold and cp2ap_wakeup high within ~200 ms; without it both stay low.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+diff --git a/arch/arm64/boot/dts/exynos/exynos990.dtsi b/arch/arm64/boot/dts/exynos/exynos990.dtsi
+--- a/arch/arm64/boot/dts/exynos/exynos990.dtsi
++++ b/arch/arm64/boot/dts/exynos/exynos990.dtsi
+@@ -436,6 +436,14 @@
+ 	/* Touch (S6SY761) helpers: the PERIC1 sub-CMU isn't modelled, so stub
+ 	 * the HSI2C clock; the two rails are real S2MPS19 LDOs (enabled via ACPM),
+ 	 * the fixed-regulators just satisfy the driver's vdd/avdd bulk-get. */
++	/* USI16 ipclk once userspace selects OSC 26 MHz / 3 (see usi_cpboot). */
++	usi16_spi_clk: usi16-spi-clock {
++		compatible = "fixed-clock";
++		#clock-cells = <0>;
++		clock-frequency = <8666666>;
++		clock-output-names = "usi16_spi_clk";
++	};
++
+ 	tsp_i2c_clk: tsp-i2c-clock {
+ 		compatible = "fixed-clock";
+ 		#clock-cells = <0>;
+@@ -733,6 +741,47 @@
+ 				};
+ 			};
+ 		};
++
++		/* USI16 SPI: boot channel to the Shannon S5123 modem (LineageOS spi_16 +
++		 * cpboot_spi@0, 2.15 MHz, mode 0, 8 bit). The USI SPI has no internal
++		 * prescaler (clk_from_cmu) and divides ipclk by 4; CMU_PERIC1 is not
++		 * modelled, so userspace sets USI16 mux = OSC 26 MHz and DIVRATIO = 2
++		 * (0x10700690 / 0x10701820) to make ipclk 8.67 MHz -> SCLK 2.17 MHz.
++		 * shortcut: fixed-clock + manual CMU writes, upgrade to a CMU_PERIC1 driver. */
++		usi_cpboot: usi@109600c0 {
++			compatible = "samsung,exynos850-usi";
++			reg = <0x109600c0 0x20>;
++			ranges;
++			#address-cells = <1>;
++			#size-cells = <1>;
++			clocks = <&usi16_spi_clk>, <&usi16_spi_clk>;
++			clock-names = "pclk", "ipclk";
++			samsung,sysreg = <&sysreg_peric1 0x1048>;
++			samsung,mode = <2>; /* USI_V2_SPI */
++			status = "okay";
++
++			spi_16: spi@10960000 {
++				compatible = "samsung,exynos850-spi";
++				reg = <0x10960000 0x30>;
++				interrupts = <GIC_SPI 434 IRQ_TYPE_LEVEL_HIGH>;
++				clocks = <&usi16_spi_clk>, <&usi16_spi_clk>;
++				clock-names = "spi", "spi_busclk0";
++				pinctrl-names = "default";
++				pinctrl-0 = <&spi16_bus &spi16_cs_func>;
++				num-cs = <1>;
++				samsung,spi-src-clk = <0>;
++				#address-cells = <1>;
++				#size-cells = <0>;
++				status = "okay";
++
++				/* Raw access for the CP boot loader; spidev needs a listed compatible. */
++				cpboot@0 {
++					compatible = "rohm,dh2228fv";
++					reg = <0>;
++					spi-max-frequency = <2150000>;
++				};
++			};
++		};
+ 
+ 		/* PERIC0 system registers — the exynos-usi driver writes USI mode (I2C)
+ 		 * here to mux the display sub-PMIC bus. */

@@ -39,12 +39,26 @@ O `ps_hold` acompanha a energia do CP, então **o S5123 é alimentado e reage ao
 | OFFSET | 0x80000 | — | 0x80000 | — |
 | INFO | 0x33990e0 | 0x40009000 | 0x180 | 0x84b6ab26 |
 
+## Marco 2: boot por SPI (feito; kernel #13, 0140 `cc4e96e8…`)
+
+- **DT (0140):**
+  - USI16 em modo SPI: `sysreg_peric1+0x1048`, que passou a ler `0x2`.
+  - Controlador `exynos850-spi` em `0x10960000`, IRQ 434. Sobe como `spi0.0`.
+  - `spidev` no CS0 a 2,15 MHz, com os grupos de pinos `spi16_bus`/`spi16_cs_func` que já existiam.
+- **Clock:** o USI SPI não tem prescaler e divide o ipclk por 4. Como o CMU_PERIC1 não é modelado, o roteiro seleciona o OSC de 26 MHz (`0x10700690` bit 4 = 0) e `DIVRATIO=2` (`0x10701820`): 8,67 MHz no ipclk e 2,17 MHz no SCLK. Antes estava em 400 MHz/1, o que daria 100 MHz.
+- **Roteiro:** `packaging/modem/cp-spiboot.sh`. Carrega o `spidev` com `bufsiz=65536`, extrai o BOOT (`0x320`, 64.400 B) do `radio`, liga o CP sem mexer no gpp8-6 (que agora é pino do SPI), envia o BOOT num único `spi_sync`, observa e desliga.
+- **Leitura com `gpioget -b pull-down`:** com o CP desligado as entradas flutuam e seguem o bias.
+
+| Ensaio | ps_hold | cp2ap_wakeup |
+|---|---|---|
+| CP desligado | 0 | 0 |
+| CP ligado, sem SPI (0–4 s) | 0 | 0 |
+| CP ligado, **~200 ms após o BOOT por SPI** | **1** | **1** |
+
+O bootloader do CP roda com o firmware enviado pelo Arch, e o `cp2ap_wakeup=1` é a condição de `check_cp_status()` para `register_pcie()`.
+
 ## Próximos marcos
 
-2. **Boot por SPI:**
-   - Declarar o USI16 SPI (`spi@10960000`, FIFO 64, `spi16_bus`/`spi16_cs_func`) com um `spidev` no CS0. No LineageOS ele é o `cpboot_spi@0`, a 2,15 MHz.
-   - Ligar o CP e escrever a seção BOOT com `spi_sync`, como `cpboot_spi_load_cp_image()`.
-   - Prova: `cp2ap_wakeup` muda e/ou o link PCIe do canal 1 treina.
 3. **PCIe1** (`pcie@13D20000`, PERST, S2MPU): o endpoint Shannon enumera no `lspci`.
 4. **MAIN e NV pelo PCIe/shmem:** carregar o firmware principal e a calibração NV do EFS, depois o handshake SIPC5.
 5. **Dados:** abrir o contexto PDP pelo protocolo IPC Samsung (FMT) e criar o `rmnet` sobre SBD/PKTPROC. É o trecho sem implementação aberta conhecida.

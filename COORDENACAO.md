@@ -16,7 +16,7 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 
 
 
-- [claude] Modem Shannon S5123 (3G/4G), marco 1: ligar o CP por GPIO e provar resposta (ps_hold/phone_active), depois PCIe1/SPI16. Pedido do proprietário em 19/11/2026. Caminhos: `packaging/kernel-patches/014*`, `checks/modem-*.md`, `research/modem-*.md`. O `roadmap/10-modem-r8s.md` (sem commit, de outro agente) é usado como referência, sem edição.
+- [claude] Modem Shannon S5123 (3G/4G), marco 1: ligar o CP por GPIO e provar resposta (ps_hold/phone_active), depois PCIe1/SPI16. Pedido do proprietário em 19/11/2026. Caminhos: `packaging/kernel-patches/014*`, `checks/modem-*.md`, `research/modem-*.md`, `packaging/modem/`. O `roadmap/10-modem-r8s.md` (sem commit, de outro agente) é usado como referência, sem edição.
 <!-- - [agente] o que está fazendo. Arquivos: caminhos que vai alterar -->
 
 ## A fazer
