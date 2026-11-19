@@ -38,6 +38,21 @@ Pedido do proprietário: habilitar USB 3 (celular USB-C para notebook USB-A 3.0)
 - A calibração do combo depende da revisão do chip (`exynos_soc_info.main_rev/sub_rev`): o aparelho é **EVT1.1** (`/sys/devices/soc0/revision = 11`), fixado no código, com aviso no log para outra revisão.
 - Compilação: `R8S_OUT_DIR` (saída separada, sem tocar em `out/work/linux` do áudio), `R8S_SKIP_PATCHES` (camera `0123 0124 0127 0128 0129 0131` não aplicam numa árvore nova) e `R8S_EXTRA_PATCHES`. Base: kernel completo da série; depois `Image` e DTB incrementais com `0145` e `0146`. Imagem: `out/usb3/boot/r8s-ufs.img` (24.532.992 B, SHA-256 `49d3205a5b405eea491116ac789c9688d4cfddd6b6f8fffee569d0ebefbcb5b2`), ainda **não iniciada no aparelho**.
 
+## Resultado dos testes em RAM (19/11/2026, observado)
+
+| Boot | Resultado |
+|---|---|
+| 1 | Travou ao iniciar o PHY: o isolamento PMU do combo (`pmu_offset_dp`, `0x704`) não estava liberado. |
+| 2 | Isolamento liberado; `NULL pointer` em `pma_base` (faltavam `pma_base`, `pcs_base`, `link_base`). |
+| 3 | PHY inicializa por inteiro e **trava o PLL e o CDR** (`locked`), nas orientações 0 e 1 (o GPIO mudou entre as duas conexões). O link ficou em `high-speed`. |
+
+- `dwc3`: `DCFG` com velocidade 4 (SuperSpeed), `DCTL` em RUN, `GSNPSID = 0x33313130` (DWC_usb31); `DSTS` conectado em HS (`link_state: On`).
+- Computador: as duas portas SuperSpeed do xHCI aparecem como `not attached`; o celular só enumera como USB 2.0. Ou seja, o computador não detecta parceiro SuperSpeed.
+- Reiniciar o PHY a quente (`usb3_reinit`) **falha o PLL** (`locked (-1)`) mesmo com a mesma orientação: o PHY só trava numa inicialização limpa. Esse teste de orientação a quente não é válido.
+- Cabo usado: USB-A (azul) para USB-C, não confirmado como USB 3.
+- Lição de build: a árvore com commits ganha `+` no release (`...-r8s+`), e os módulos instalados são de `...-r8s`; compile com `LOCALVERSION=` (sem isso: sem Wi-Fi, sem GPU).
+- Ainda **não** testado: orientação forçada no boot, outro cabo, `samsung,force-gen1`/LPM do controlador, cópia do restante do fluxo do vendor (`phy_exynos_usb_v3p1_enable`/`late_enable`).
+
 ## Limites e riscos (honestidade sobre o ganho)
 
 - USB 3 permite declarar 900 mA: no melhor caso 4,5 W contra 2,5 W hoje. Cabo USB-A para USB-C sempre anuncia corrente padrão (Rp 56 kΩ).

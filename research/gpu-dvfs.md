@@ -98,3 +98,11 @@ Abortar (parar a carga) acima de 80 °C.
   (`ect-parsed.txt`) não mostra entradas para G3D.
 - Vale incluir 832 MHz (está no `gpu_dvfs_table`, mas `gpu_max_clock` é 800)?
 - O `pd_g3d` do port não tem `samsung,need-smc` (o kernel Samsung usa `0x18410204` para a G3D); não mexi nisso.
+
+
+## Resultado da etapa 1, só leitura (19/11/2026, kernel de teste #5 em RAM, observado)
+
+- `/sys/kernel/debug/exynos990-g3d/status` existe; com a GPU segura ligada (`power/control = on`): `pd_g3d: on`, `r8s_gpu_dvfs: 0`, `last_set_khz: 800000`, **`acpm_khz: 0 (not a table level)`**.
+- O `get_rate(10)` devolve 0: **não serve para ler a frequência real** (como o plano previa). Os 800 MHz são só o valor registrado pelo kernel.
+- `panfrost`: `clock rate = 800000000`, `r8s_devfreq = N`.
+- Imagem para a etapa 2: `out/usb3/boot/r8s-ufs-gpu.img` (SHA-256 `f49c38986a5ae3d5…`): mesmo kernel do teste de USB 3, DTB **sem** o USB 3 (`maximum-speed = high-speed`) e `bootargs` com `r8s_gpu_dvfs=1`. Só RAM (`fastboot boot`).
