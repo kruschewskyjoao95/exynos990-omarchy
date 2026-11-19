@@ -29,6 +29,8 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 8. [claude] Revisar logs/artefatos gerados em M2–M4 no aparelho real antes de avançar para M5.
 
 ## Feito, aguardando revisão
+- [codex] `c452485`: MSI do endpoint e SIPC5 alinhado a 8 bytes confirmaram boot completo do S5123 (`0xAF00`, `cbd` rc 0, `phone_active` ativo) no #18. IPC em operação normal e dados celulares pendentes. Evidência em `research/modem-cbd-boot.md`.
+
 - [codex] `c73ced3`: `0143` validado em boot temporário no kernel #18. Janela PCIe cobre `0x14060000`; o CP ainda deixou `RAW TX tail=0` em três tentativas de `0x9100`. Wi-Fi confirmado conectado pós-ensaio. Evidência em `research/modem-cbd-boot.md`.
 
 - [claude] Câmera traseira S5K2LD **congelada** por decisão do proprietário (19/11/2026), sem imagem. Patches 0129–0131 (`6fbfd11`, `684fd4c`, `25e9c3d`) com parâmetros de bring-up em `/sys/module/{exynos990_csis,phy_exynos990_mipi_csi}/parameters` (`potf`, `order`, `delay_ms`, `lineage_reset`, `settle`) e vsel do S2MPS22. Os padrões mantêm o comportamento do 0128; para captura só por DMA use `potf=1`. Diagnóstico em `checks/camera-0129.md` (`457cc33`, `263a48c`): sensor a 30 fps, toda escrita do código Samsung confirmada no hardware, pacotes C-PHY corrompidos (ERR_ID/CRC) desde o 1º quadro. Para retomar: dump do LineageOS com `debug_csi` (exige GPT/userdata/root). O aparelho ficou no Arch com o kernel #12 (`a1040394…`).
