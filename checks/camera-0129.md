@@ -54,6 +54,21 @@ Leitura durante a captura, com `potf=1` e settle 7:
 
 Ficam descartados como causa: a taxa e o MCLK do sensor, a tensão dos trilhos do PHY e a ordem de ligar as fontes.
 
+## Leitura de volta durante o stream (kernel #11, `/dev/mem` e I2C)
+
+- **Sensor (CCS):** `0x0100=01`, `0x0111=02`, `0x0112=0a0a` (RAW10), `0x0114=02` (3 lanes), `0x0600=0000` (sem test pattern), `0x0BCC=0100`. O setfile do LineageOS também não grava `0x0111`. Ele grava `0x0114=0x0201`, igual ao nosso. A seleção C-PHY é do fabricante.
+- **PHY:**
+  - O bias `0x170D1000` vale `10/110/3223/40`.
+  - Os trios SD0–SD2 (`0x170D1400/1500/1600`) valem `GNR_CON0=3`, `0x1450`, `9`, `82c8`, `1`, `8680`, `4000`, `200`, `638`, `40`, TIME `7`/`32`, DESKEW `0` e CRC `1503`/`33`.
+  - Tudo igual ao `__set_phy_cfg_0503_0000_dcphy` em modo C, ou seja, as escritas **ficam** no hardware.
+- **CSIS0:**
+  - `CMN_CTRL=0x00204e01` (PHY_SEL C-PHY, 3 trios, VC_DT, CSI_EN, deskew 2) e `CLK_CTRL=0x10`.
+  - Configuração dos canais: CH0 `0x28ac`/`0x05e807e0`, CH1 `0x128ac`/`0x017a07e0` e CH3 `0x2848`/`0x000207e0`.
+  - `LRTE=0x80000000`, `DBG_OPTION=0x00800000` e `PHY_CMN_CTRL=0x1f`.
+- **SYSREG_CSIS `0x17020000`:** `0x404=1`, `0x408=0`, `0x41c=0` (DMA2←CSIS0), `0x440=0`, `0x448=0`, `0x450=0x3fe00`, `0x454=0x1ff` e `0x500=1`. São todos os valores de reset da tabela Samsung (`is-v8_0_0/is-hw-chain.c`).
+
+Toda a configuração visível no código Samsung está confirmada no hardware. O que resta é algo que o código não mostra: um estado deixado pelo firmware ou pelo HAL no LineageOS, ou uma diferença física.
+
 ## Próximo passo
 
 Medir o LineageOS em execução neste aparelho, com a câmera aberta: os registradores do PHY em `0x170D1300..0x170D17FF`, o bias em `0x170D1000`, `CSIS0` e `sysreg 0x17020500`. Depois, comparar com o #10 palavra por palavra. O código-fonte não mostra mais nenhuma diferença.
