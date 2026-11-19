@@ -1,0 +1,105 @@
+From: Claude <noreply@anthropic.com>
+Subject: [PATCH] r8s-camera: program S2MPS22 LDO5S/LDO6S vsel, log CTRL, sequence PHY supplies
+
+- s2mps22-acpm-regulator only toggled CTRL[7:6]; fixed_uV is descriptive
+  and nothing set CTRL[5:0]. Program vsel at probe (LDO5S group 3:
+  700 mV + 12.5 mV -> 0x0C = 0.85 V; LDO6S group 2: 700 mV + 25 mV ->
+  0x2C = 1.8 V, per Samsung s2mps22_regulator.c) and log CTRL before/after
+  and on enable. On r8s kernel #11 the bootloader already leaves
+  0xcc/0xec (on, correct voltage), so this is a no-op there.
+- phy-exynos990-mipi-csi: enable 0.85 V, wait 1 ms, then 1.8 V, as
+  LineageOS __set_phy_ldo. No change in the C-PHY error pattern.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+diff --git a/drivers/regulator/s2mps22-acpm-regulator.c b/drivers/regulator/s2mps22-acpm-regulator.c
+--- a/drivers/regulator/s2mps22-acpm-regulator.c
++++ b/drivers/regulator/s2mps22-acpm-regulator.c
+@@ -27,6 +27,14 @@
+ #define S2MPS22_REG_LDO5S_CTRL		0x2E
+ #define S2MPS22_REG_LDO6S_CTRL		0x2F
+ 
++/*
++ * Output voltage is CTRL[5:0]. Samsung s2mps22_regulator.c: LDO5S is group 3
++ * (700 mV + 12.5 mV/step), LDO6S group 2 (700 mV + 25 mV/step).
++ */
++#define S2MPS22_LDO_VSEL_MASK		0x3F
++#define S2MPS22_LDO5S_VSEL_0P85		((850000 - 700000) / 12500)	/* 0x0C */
++#define S2MPS22_LDO6S_VSEL_1P8		((1800000 - 700000) / 25000)	/* 0x2C */
++
+ struct s2mps22_acpm {
+ 	struct acpm_handle *acpm;
+ 	unsigned int chan_id;
+@@ -53,6 +61,7 @@
+ 				       S2MPS22_TYPE_PMIC,
+ 				       rdev->desc->enable_reg,
+ 				       S2MPS22_SPEEDY_CHAN, &val);
++	dev_info(pmic->dev, "%s on: ctrl=%#04x\n", rdev->desc->name, val);
+ 	return 0;
+ }
+ 
+@@ -111,6 +120,35 @@
+ 	S2MPS22_ACPM_DESC("LDO6S", "ldo6s", S2MPS22_REG_LDO6S_CTRL, 1800000),
+ };
+ 
++/* Same order as s2mps22_acpm_regulators[]. */
++static const u8 s2mps22_acpm_vsel[] = {
++	S2MPS22_LDO5S_VSEL_0P85,
++	S2MPS22_LDO6S_VSEL_1P8,
++};
++
++/*
++ * fixed_uV only describes the rail; nothing else programs CTRL[5:0], and a rail
++ * left on by the bootloader never reaches .enable. Set the voltage once here.
++ */
++static void s2mps22_acpm_set_vsel(struct s2mps22_acpm *pmic, int i)
++{
++	u8 reg = s2mps22_acpm_regulators[i].enable_reg, before = 0, after = 0;
++	int ret;
++
++	pmic->acpm->ops->pmic.read_reg(pmic->acpm, pmic->chan_id, S2MPS22_TYPE_PMIC,
++				       reg, S2MPS22_SPEEDY_CHAN, &before);
++	ret = pmic->acpm->ops->pmic.update_reg(pmic->acpm, pmic->chan_id,
++					       S2MPS22_TYPE_PMIC, reg,
++					       S2MPS22_SPEEDY_CHAN,
++					       s2mps22_acpm_vsel[i],
++					       S2MPS22_LDO_VSEL_MASK);
++	pmic->acpm->ops->pmic.read_reg(pmic->acpm, pmic->chan_id, S2MPS22_TYPE_PMIC,
++				       reg, S2MPS22_SPEEDY_CHAN, &after);
++	dev_info(pmic->dev, "%s ctrl %#04x -> %#04x (vsel %#x, ret %d)\n",
++		 s2mps22_acpm_regulators[i].name, before, after,
++		 s2mps22_acpm_vsel[i], ret);
++}
++
+ static int s2mps22_acpm_probe(struct platform_device *pdev)
+ {
+ 	struct device *dev = &pdev->dev;
+@@ -145,6 +183,7 @@
+ 	for (i = 0; i < ARRAY_SIZE(s2mps22_acpm_regulators); i++) {
+ 		struct regulator_dev *rdev;
+ 
++		s2mps22_acpm_set_vsel(pmic, i);
+ 		rdev = devm_regulator_register(dev,
+ 					       &s2mps22_acpm_regulators[i],
+ 					       &config);
+diff --git a/drivers/phy/samsung/phy-exynos990-mipi-csi.c b/drivers/phy/samsung/phy-exynos990-mipi-csi.c
+--- a/drivers/phy/samsung/phy-exynos990-mipi-csi.c
++++ b/drivers/phy/samsung/phy-exynos990-mipi-csi.c
+@@ -42,9 +42,16 @@
+ 	struct exynos990_mipi_csi_phy *state = phy_get_drvdata(phy);
+ 	int ret;
+ 
+-	ret = regulator_bulk_enable(ARRAY_SIZE(state->supplies), state->supplies);
++	/* LineageOS __set_phy_ldo: 0.85 V first, settle 1 ms, then 1.8 V. */
++	ret = regulator_enable(state->supplies[0].consumer);
+ 	if (ret)
+ 		return ret;
++	usleep_range(1000, 1100);
++	ret = regulator_enable(state->supplies[1].consumer);
++	if (ret) {
++		regulator_disable(state->supplies[0].consumer);
++		return ret;
++	}
+ 
+ 	ret = regmap_update_bits(state->reg_pmu, state->iso_offset,
+ 				 EXYNOS_MIPI_PHY_ISO_BYPASS,

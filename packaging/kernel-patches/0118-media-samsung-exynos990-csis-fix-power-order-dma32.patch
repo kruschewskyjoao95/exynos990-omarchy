@@ -1,0 +1,65 @@
+From: Antigravity <antigravity@local>
+Subject: [PATCH] media: samsung: exynos990-csis: fix pd_csis ordering & 32-bit DMA
+
+Power on pd_csis via exynos990_csis_s_stream(1) before touching DMA0 MMIO
+registers in start_streaming (and reverse in stop_streaming), and constrain
+DMA mask to 32 bits for DMA0_ADDR1.
+
+Signed-off-by: Antigravity <antigravity@local>
+---
+diff --git a/drivers/media/platform/samsung/exynos990-csis.c b/drivers/media/platform/samsung/exynos990-csis.c
+index 000000000..000000000 100644
+--- a/drivers/media/platform/samsung/exynos990-csis.c
++++ b/drivers/media/platform/samsung/exynos990-csis.c
+@@ -3,6 +3,7 @@
+  * Samsung Exynos 990 MIPI CSI-2 receiver (CSIS v5.2) + WDMA V4L2 driver
+  */
+ 
++#include <linux/dma-mapping.h>
+ #include <linux/interrupt.h>
+ #include <linux/io.h>
+ #include <linux/module.h>
+@@ -258,6 +259,10 @@
+ 
+ 	csis->sequence = 0;
+ 
++	ret = exynos990_csis_s_stream(&csis->sd, 1);
++	if (ret)
++		goto err_release;
++
+ 	if (csis->dma_regs && csis->dma_cmn_regs) {
+ 		spin_lock_irqsave(&csis->buf_lock, flags);
+ 		if (!list_empty(&csis->buf_list)) {
+@@ -279,10 +284,6 @@
+ 		writel(DMA0_CTRL_ENABLE, csis->dma_regs + DMA0_CTRL);
+ 	}
+ 
+-	ret = exynos990_csis_s_stream(&csis->sd, 1);
+-	if (ret)
+-		goto err_release;
+-
+ 	return 0;
+ 
+ err_release:
+@@ -311,11 +312,11 @@
+ 	struct exynos990_csis *csis = vb2_get_drv_priv(vq);
+ 	unsigned long flags;
+ 
+-	exynos990_csis_s_stream(&csis->sd, 0);
+ 	if (csis->dma_regs && csis->dma_cmn_regs) {
+ 		writel(0, csis->dma_regs + DMA0_CTRL);
+ 		writel(0, csis->dma_cmn_regs + DMA_INT_MASK);
+ 	}
++	exynos990_csis_s_stream(&csis->sd, 0);
+ 
+ 	spin_lock_irqsave(&csis->buf_lock, flags);
+ 	if (csis->active_buf) {
+@@ -446,6 +447,8 @@
+ 	csis->dma_cmn_regs = devm_platform_ioremap_resource(pdev, 2);
+ 	if (IS_ERR(csis->dma_cmn_regs))
+ 		csis->dma_cmn_regs = NULL;
++
++	dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
+ 
+ 	csis->phy = devm_phy_get(dev, "csis_dphy");
+ 	if (IS_ERR(csis->phy))

@@ -1,0 +1,207 @@
+From: Antigravity <antigravity@local>
+Subject: [PATCH] phy: samsung: add exynos990 MIPI CSI-2 D-PHY driver
+
+Add a minimal Linux 6.12 PHY driver for Exynos 990 MIPI CSI-2 receivers
+(compatible "samsung,mipi-phy-m0s4s4s4s4s4s2"), handling PMU isolation,
+sysreg reset, and the S2MPS22 LDO5S/LDO6S power rails.
+
+Signed-off-by: Antigravity <antigravity@local>
+---
+ drivers/phy/samsung/Kconfig                  |   9 ++
+ drivers/phy/samsung/Makefile                 |   1 +
+ drivers/phy/samsung/phy-exynos990-mipi-csi.c | 162 +++++++++++++++++++
+ 3 files changed, 172 insertions(+)
+ create mode 100644 drivers/phy/samsung/phy-exynos990-mipi-csi.c
+
+diff --git a/drivers/phy/samsung/Kconfig b/drivers/phy/samsung/Kconfig
+index 000000000..000000000 100644
+--- a/drivers/phy/samsung/Kconfig
++++ b/drivers/phy/samsung/Kconfig
+@@ -10,6 +10,15 @@
+ 	select GENERIC_PHY
+ 	help
+ 	  Support for Display Port PHY found on Samsung Exynos SoCs.
++
++config PHY_EXYNOS990_MIPI_CSI
++	tristate "Samsung Exynos 990 MIPI CSI-2 D-PHY driver"
++	depends on HAS_IOMEM
++	depends on ARCH_EXYNOS || COMPILE_TEST
++	select GENERIC_PHY
++	help
++	  Support for the MIPI CSI-2 D-PHY (m0s4s4s4s4s4s2) found on
++	  Samsung Exynos 990 SoCs.
+ 
+ config PHY_EXYNOS_MIPI_VIDEO
+ 	tristate "S5P/Exynos SoC series MIPI CSI-2/DSI PHY driver"
+diff --git a/drivers/phy/samsung/Makefile b/drivers/phy/samsung/Makefile
+index 000000000..000000000 100644
+--- a/drivers/phy/samsung/Makefile
++++ b/drivers/phy/samsung/Makefile
+@@ -1,5 +1,6 @@
+ # SPDX-License-Identifier: GPL-2.0
+ obj-$(CONFIG_PHY_EXYNOS_DP_VIDEO)	+= phy-exynos-dp-video.o
++obj-$(CONFIG_PHY_EXYNOS990_MIPI_CSI)	+= phy-exynos990-mipi-csi.o
+ obj-$(CONFIG_PHY_EXYNOS_MIPI_VIDEO)	+= phy-exynos-mipi-video.o
+ obj-$(CONFIG_PHY_EXYNOS_PCIE)		+= phy-exynos-pcie.o
+ obj-$(CONFIG_PHY_SAMSUNG_UFS)		+= phy-exynos-ufs.o
+diff --git a/drivers/phy/samsung/phy-exynos990-mipi-csi.c b/drivers/phy/samsung/phy-exynos990-mipi-csi.c
+new file mode 100644
+index 000000000..000000000
+--- /dev/null
++++ b/drivers/phy/samsung/phy-exynos990-mipi-csi.c
+@@ -0,0 +1,155 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Samsung Exynos 990 MIPI CSI-2 D-PHY driver
++ */
++
++#include <linux/io.h>
++#include <linux/mfd/syscon.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/phy/phy.h>
++#include <linux/platform_device.h>
++#include <linux/regmap.h>
++#include <linux/regulator/consumer.h>
++
++#define EXYNOS_MIPI_PHY_ISO_BYPASS	BIT(0)
++
++struct exynos990_mipi_csi_phy {
++	struct device *dev;
++	void __iomem *regs;
++	struct regmap *reg_pmu;
++	struct regmap *reg_reset;
++	u32 iso_offset;
++	u32 reset_bit;
++	bool has_reset;
++	struct regulator_bulk_data supplies[2];
++	struct phy *phy;
++};
++
++static int exynos990_mipi_csi_phy_power_on(struct phy *phy)
++{
++	struct exynos990_mipi_csi_phy *state = phy_get_drvdata(phy);
++	int ret;
++
++	ret = regulator_bulk_enable(ARRAY_SIZE(state->supplies), state->supplies);
++	if (ret)
++		return ret;
++
++	if (state->has_reset) {
++		ret = regmap_update_bits(state->reg_reset, 0,
++					 BIT(state->reset_bit),
++					 BIT(state->reset_bit));
++		if (ret) {
++			regulator_bulk_disable(ARRAY_SIZE(state->supplies),
++					       state->supplies);
++			return ret;
++		}
++	}
++
++	ret = regmap_update_bits(state->reg_pmu, state->iso_offset,
++				 EXYNOS_MIPI_PHY_ISO_BYPASS,
++				 EXYNOS_MIPI_PHY_ISO_BYPASS);
++	if (ret) {
++		regulator_bulk_disable(ARRAY_SIZE(state->supplies),
++				       state->supplies);
++		return ret;
++	}
++
++	return 0;
++}
++
++static int exynos990_mipi_csi_phy_power_off(struct phy *phy)
++{
++	struct exynos990_mipi_csi_phy *state = phy_get_drvdata(phy);
++
++	regmap_update_bits(state->reg_pmu, state->iso_offset,
++			   EXYNOS_MIPI_PHY_ISO_BYPASS, 0);
++
++	if (state->has_reset)
++		regmap_update_bits(state->reg_reset, 0,
++				   BIT(state->reset_bit), 0);
++
++	regulator_bulk_disable(ARRAY_SIZE(state->supplies), state->supplies);
++
++	return 0;
++}
++
++static const struct phy_ops exynos990_mipi_csi_phy_ops = {
++	.power_on	= exynos990_mipi_csi_phy_power_on,
++	.power_off	= exynos990_mipi_csi_phy_power_off,
++	.owner		= THIS_MODULE,
++};
++
++static struct phy *exynos990_mipi_csi_phy_xlate(struct device *dev,
++						const struct of_phandle_args *args)
++{
++	struct exynos990_mipi_csi_phy *state = dev_get_drvdata(dev);
++
++	return state->phy;
++}
++
++static int exynos990_mipi_csi_phy_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct device_node *np = dev->of_node;
++	struct exynos990_mipi_csi_phy *state;
++	struct phy_provider *provider;
++	int ret;
++
++	state = devm_kzalloc(dev, sizeof(*state), GFP_KERNEL);
++	if (!state)
++		return -ENOMEM;
++
++	state->dev = dev;
++	state->regs = devm_platform_ioremap_resource(pdev, 0);
++	if (IS_ERR(state->regs))
++		return PTR_ERR(state->regs);
++
++	state->reg_pmu = syscon_regmap_lookup_by_phandle(np, "samsung,pmu-syscon");
++	if (IS_ERR(state->reg_pmu))
++		return dev_err_probe(dev, PTR_ERR(state->reg_pmu),
++				     "failed to lookup pmu syscon\n");
++
++	if (of_property_read_u32(np, "isolation", &state->iso_offset))
++		return dev_err_probe(dev, -EINVAL, "missing isolation offset\n");
++
++	state->reg_reset = syscon_regmap_lookup_by_phandle(np, "samsung,reset-sysreg");
++	if (!IS_ERR(state->reg_reset) &&
++	    !of_property_read_u32(np, "reset", &state->reset_bit))
++		state->has_reset = true;
++
++	state->supplies[0].supply = "vdd-0p85";
++	state->supplies[1].supply = "vdd-1p8";
++	ret = devm_regulator_bulk_get(dev, ARRAY_SIZE(state->supplies),
++				      state->supplies);
++	if (ret)
++		return dev_err_probe(dev, ret, "failed to get regulators\n");
++
++	state->phy = devm_phy_create(dev, NULL, &exynos990_mipi_csi_phy_ops);
++	if (IS_ERR(state->phy))
++		return PTR_ERR(state->phy);
++
++	phy_set_drvdata(state->phy, state);
++	dev_set_drvdata(dev, state);
++
++	provider = devm_of_phy_provider_register(dev, exynos990_mipi_csi_phy_xlate);
++	return PTR_ERR_OR_ZERO(provider);
++}
++
++static const struct of_device_id exynos990_mipi_csi_phy_of_match[] = {
++	{ .compatible = "samsung,mipi-phy-m0s4s4s4s4s4s2" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, exynos990_mipi_csi_phy_of_match);
++
++static struct platform_driver exynos990_mipi_csi_phy_driver = {
++	.driver = {
++		.name = "exynos990-mipi-csi-phy",
++		.of_match_table = exynos990_mipi_csi_phy_of_match,
++	},
++	.probe = exynos990_mipi_csi_phy_probe,
++};
++module_platform_driver(exynos990_mipi_csi_phy_driver);
++
++MODULE_DESCRIPTION("Samsung Exynos 990 MIPI CSI-2 D-PHY driver");
++MODULE_LICENSE("GPL");

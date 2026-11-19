@@ -1,0 +1,125 @@
+From: Antigravity <antigravity@local>
+Subject: [PATCH] media: r8s-camera: deassert DCPHY reset before C-PHY init and use OTF WDMA path
+
+On Exynos 990 r8s, phy-exynos990-mipi-csi asserted the MIPI PHY reset bit
+before writing the bias and C-PHY lane registers and only released reset
+afterward, leaving the DCPHY unconfigured. Pulse and deassert reset before
+programming the C-PHY registers to match LineageOS phy-exynos-mipi.
+
+In exynos990-csis:
+- Clear POTF_ONLY on CH0/CH1/CH3 and set DMA_DATA_CTRL=0 (OTF input), matching
+  LineageOS non-VOTF WDMA capture.
+- Follow LineageOS csi_hw_enable() order (UPDATE_SHADOW -> CMN_CTRL PHY_SEL/
+  LANE_NUMBER/INTERLEAVE_MODE -> PHY_CMN_CTRL -> CSI_EN).
+- Reset COMMON_DMA_CTRL (SW_RESET -> IP_PROCESSING) and DMA0 registers before
+  arming buffers, and set DMA_N_UPDT_PTR_EN when programming DMA0_ADDR1.
+
+Signed-off-by: Antigravity <antigravity@local>
+---
+diff --git a/drivers/phy/samsung/phy-exynos990-mipi-csi.c b/drivers/phy/samsung/phy-exynos990-mipi-csi.c
+index 111111111..222222222 100644
+--- a/drivers/phy/samsung/phy-exynos990-mipi-csi.c
++++ b/drivers/phy/samsung/phy-exynos990-mipi-csi.c
+@@ -49,6 +49,12 @@ static int exynos990_mipi_csi_phy_power_on(struct phy *phy)
+ 	if (state->has_reset) {
+ 		ret = regmap_update_bits(state->reg_reset, 0, BIT(state->reset_bit), 0);
+ 		if (ret)
+ 			goto err_isolate;
++		usleep_range(10, 20);
++		ret = regmap_update_bits(state->reg_reset, 0, BIT(state->reset_bit),
++					 BIT(state->reset_bit));
++		if (ret)
++			goto err_isolate;
++		usleep_range(10, 20);
+ 	}
+ 
+ 	for (int i = 0; i < 3; i++)
+@@ -83,13 +89,6 @@ static int exynos990_mipi_csi_phy_power_on(struct phy *phy)
+ 	}
+ 	usleep_range(200, 250);
+ 
+-	if (state->has_reset) {
+-		ret = regmap_update_bits(state->reg_reset, 0, BIT(state->reset_bit),
+-					 BIT(state->reset_bit));
+-		if (ret)
+-			goto err_isolate;
+-	}
+-
+ 	return 0;
+ 
+ err_isolate:
+diff --git a/drivers/media/platform/samsung/exynos990-csis.c b/drivers/media/platform/samsung/exynos990-csis.c
+index 111111111..222222222 100644
+--- a/drivers/media/platform/samsung/exynos990-csis.c
++++ b/drivers/media/platform/samsung/exynos990-csis.c
+@@ -51,7 +51,9 @@
+ #define DMA0_ADDR1			0x0010
+ #define DMA0_RESOL			0x00a4
+ #define DMA0_FCNTSEQ			0x00b0
++#define DMA0_FRO_FRM			0x00bc
+ #define DMA0_CTRL_ENABLE		BIT(0)
++#define DMA0_CTRL_UPDT_PTR_EN		BIT(1)
+ 
+ /* CSIS WDMA2 Common (0x170c3400) */
+ #define DMA_DATA_CTRL			0x0000
+@@ -118,7 +120,7 @@ static void exynos990_csis_next_buf(struct exynos990_csis *csis)
+ 	csis->active_buf = buf;
+ 	writel(lower_32_bits(addr), csis->dma_regs + DMA0_ADDR1);
+ 	writel(BIT(0), csis->dma_regs + DMA0_FCNTSEQ);
+-	writel(DMA0_CTRL_ENABLE, csis->dma_regs + DMA0_CTRL);
++	writel(DMA0_CTRL_UPDT_PTR_EN | DMA0_CTRL_ENABLE, csis->dma_regs + DMA0_CTRL);
+ }
+ 
+ static irqreturn_t exynos990_csis_irq(int irq, void *priv)
+@@ -189,19 +191,20 @@ static int exynos990_csis_link(struct exynos990_csis *csis, bool enable)
+ 			goto err_phy;
+ 		writel(BIT(31), csis->regs + CSIS_LRTE_CONFIG);
+ 		writel(BIT(23), csis->regs + CSIS_DBG_OPTION_SUITE);
+-		writel((2 << 12) | BIT(11) | (0x2B << 2), csis->regs + CSIS_ISP_CONFIG_CH0);
++		writel((2 << 12) | (0x2B << 2), csis->regs + CSIS_ISP_CONFIG_CH0);
+ 		writel((csis->pix.height << 16) | csis->pix.width,
+ 		       csis->regs + CSIS_ISP_RESOL_CH0);
+ 		/* The mode also sends VC1 PDAF and VC0 embedded data. */
+-		writel(BIT(16) | (2 << 12) | BIT(11) | (0x2b << 2), csis->regs + 0x0050);
++		writel(BIT(16) | (2 << 12) | (0x2b << 2), csis->regs + 0x0050);
+ 		writel((378 << 16) | 2016, csis->regs + 0x0054);
+-		writel((2 << 12) | BIT(11) | (0x12 << 2), csis->regs + 0x0070);
++		writel((2 << 12) | (0x12 << 2), csis->regs + 0x0070);
+ 		writel((2 << 16) | 2016, csis->regs + 0x0074);
+-		writel(0x1f, csis->regs + CSIS_PHY_CMN_CTRL);
+ 		writel(0xf, csis->regs + CSIS_UPD_SDW);
+ 		val = readl(csis->regs + CSIS_CMN_CTRL) | CSIS_CMN_CTRL_PHY_SEL_CPHY |
+-		      (2 << CSIS_CMN_CTRL_LANE_NUM_SHIFT) | (3 << 10) | CSIS_CMN_CTRL_CSI_EN;
++		      (2 << CSIS_CMN_CTRL_LANE_NUM_SHIFT) | (3 << 10);
+ 		writel(val, csis->regs + CSIS_CMN_CTRL);
++		writel(0x1f, csis->regs + CSIS_PHY_CMN_CTRL);
++		writel(val | CSIS_CMN_CTRL_CSI_EN, csis->regs + CSIS_CMN_CTRL);
+ 		writel(0, csis->regs + 0x0020); /* FS_INT_MSK */
+ 		writel(0, csis->regs + 0x0028); /* FE_INT_MSK */
+ 		/* WDMA frame end is the only IRQ needed for memory capture. */
+@@ -331,13 +334,22 @@ static int exynos990_csis_start_streaming(struct vb2_queue *vq, unsigned int cou
+ 		goto err_release;
+ 
+ 	writel(0, csis->dma_mux); /* CSIS0 OTF -> WDMA2 */
+-	writel(readl(csis->dma_top_regs + COMMON_DMA_CTRL) | BIT(1),
+-	       csis->dma_top_regs + COMMON_DMA_CTRL);
++	{
++		u32 dma_ctrl;
++
++		writel(BIT(0), csis->dma_top_regs + COMMON_DMA_CTRL);
++		readl_poll_timeout(csis->dma_top_regs + COMMON_DMA_CTRL,
++				   dma_ctrl, !(dma_ctrl & BIT(0)), 10, 1000);
++		writel(BIT(1), csis->dma_top_regs + COMMON_DMA_CTRL);
++	}
++	writel(0, csis->dma_regs + DMA0_CTRL);
++	writel(0, csis->dma_regs + DMA0_FCNTSEQ);
++	writel(0, csis->dma_regs + DMA0_FRO_FRM);
+ 
+ 	writel(0x4, csis->dma_regs + DMA0_FMT); /* U10BIT_PACK */
+ 	writel(csis->pix.width, csis->dma_regs + DMA0_RESOL);
+ 	writel(0, csis->dma_cmn_regs + 0x001c); /* RAW10 OTF_FORMAT */
+-	writel(1, csis->dma_cmn_regs + DMA_DATA_CTRL); /* parallel input */
++	writel(0, csis->dma_cmn_regs + DMA_DATA_CTRL); /* OTF input (potf=false) */
+ 	writel(readl(csis->dma_cmn_regs + DMA_INT_SRC), csis->dma_cmn_regs + DMA_INT_SRC);
+ 	spin_lock_irqsave(&csis->buf_lock, flags);
+ 	csis->dma_running = true;

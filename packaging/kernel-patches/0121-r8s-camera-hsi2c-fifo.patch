@@ -1,0 +1,72 @@
+Use the Exynos990 16-byte TX FIFO on the S5K2LD camera bus.
+Lineage universal9830 97369af7bbd66581d3e993fea083f3eed02d3c20: EXYNOS5_FIFO_SIZE.
+
+--- a/arch/arm64/boot/dts/exynos/exynos990.dtsi
++++ b/arch/arm64/boot/dts/exynos/exynos990.dtsi
+@@ -760,7 +760,7 @@
+ 			status = "okay";
+ 
+ 			hsi2c_3: i2c@10580000 {
+-				compatible = "samsung,exynosautov9-hsi2c";
++				compatible = "samsung,exynos990-hsi2c";
+ 				reg = <0x10580000 0xc0>;
+ 				interrupts = <GIC_SPI 400 IRQ_TYPE_LEVEL_HIGH>;
+ 				#address-cells = <1>;
+--- a/drivers/i2c/busses/i2c-exynos5.c
++++ b/drivers/i2c/busses/i2c-exynos5.c
+@@ -240,6 +240,12 @@
+ 	.hw		= I2C_TYPE_EXYNOSAUTOV9,
+ };
+ 
++/* Exynos990 USI uses the AutoV9 timing registers with a 16-byte FIFO. */
++static const struct exynos_hsi2c_variant exynos990_hsi2c_data = {
++	.fifo_depth	= 16,
++	.hw		= I2C_TYPE_EXYNOSAUTOV9,
++};
++
+ static const struct of_device_id exynos5_i2c_match[] = {
+ 	{
+ 		.compatible = "samsung,exynos5-hsi2c",
+@@ -256,6 +262,9 @@
+ 	}, {
+ 		.compatible = "samsung,exynosautov9-hsi2c",
+ 		.data = &exynosautov9_hsi2c_data
++	}, {
++		.compatible = "samsung,exynos990-hsi2c",
++		.data = &exynos990_hsi2c_data
+ 	}, {},
+ };
+ MODULE_DEVICE_TABLE(of, exynos5_i2c_match);
+--- a/drivers/media/i2c/s5k2ld.c
++++ b/drivers/media/i2c/s5k2ld.c
+@@ -112,8 +112,11 @@
+ 				 len + 2 <= limit);
+ 			i -= 3;
+ 			ret = i2c_master_send(client, buf, len);
+-			if (ret != (int)len)
++			if (ret != (int)len) {
++				dev_err(&client->dev, "burst %#x ending at entry %zu (%zu bytes): %d\n",
++					burst_addr, i / 3, len, ret);
+ 				return ret < 0 ? ret : -EIO;
++			}
+ 		} else if (width == 0x01) {
+ 			ret = s5k2ld_write_reg8(client, (u16)op, (u8)val);
+ 			if (ret)
+--- a/Documentation/devicetree/bindings/i2c/i2c-exynos5.yaml
++++ b/Documentation/devicetree/bindings/i2c/i2c-exynos5.yaml
+@@ -24,6 +24,7 @@
+       - enum:
+           - samsung,exynos5250-hsi2c    # Exynos5250 and Exynos5420
+           - samsung,exynos5260-hsi2c    # Exynos5260
++          - samsung,exynos990-hsi2c
+           - samsung,exynos7-hsi2c       # Exynos7
+           - samsung,exynosautov9-hsi2c
+       - items:
+@@ -80,6 +81,7 @@
+         compatible:
+           contains:
+             enum:
++              - samsung,exynos990-hsi2c
+               - samsung,exynosautov9-hsi2c
+ 
+     then:

@@ -4,11 +4,14 @@ Quadro compartilhado entre os agentes (Gemini/Antigravity, Claude Code) e o prop
 
 ## Estado atual do aparelho
 
-17/11/2026: **LineageOS restaurado e boot completo confirmado; lk3rd removido.** Boot voltou a `sda13` (59 MiB); o slot dividido `sda33` foi removido da GPT. Nenhum Arch/Omarchy instalado. USB liberado após encerrar a restauração. Os registros de lk3rd/slim abaixo são históricos; não reutilizar o mapa dividido como estado atual. Alerta UFS de vida estimada permanece preexistente. Evidência: `checks/return-lineage.md`.
+17/11/2026, retomada: **lk3rd gravado de novo e Linux 0107 em RAM.** Backup Lineage conferido antes da escrita (local e HD, boot ao vivo igual a `stock-boot.img`); nenhum backup novo. GPT outra vez dividida: `sda13`=2 MiB lk3rd, `sda33`=57 MiB, `sda32`=userdata. Slim no console USB; tela KMS 1080x2400 ligada, toque Zinitix enumerado. Userdata ainda não gravada. O backup de boot continua o caminho de volta.
 
 ## Em andamento
 
-- [codex] Investigar saúde UFS 0x0B: cruzar log Samsung preservado com sysfs mainline e fonte Lineage fixada; sem comandos de escrita/reset/flash no telefone. Caminhos: `research/ufs-health.md`, `checks/ufs-clocks-ram.md`, `research/ufs-clocks-fixes.md`, `out/validation/ufs-health/`.
+
+- [codex] Desktop em andamento: lk3rd gravado e slim 0107 em RAM com KMS 1080x2400. Próximo passo é gravar `ufs-root.img` em userdata. Sem novo backup. Arquivos: `COORDENACAO.md`.
+
+
 
 
 
@@ -25,6 +28,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 8. [claude] Revisar logs/artefatos gerados em M2–M4 no aparelho real antes de avançar para M5.
 
 ## Feito, aguardando revisão
+- [claude] Câmera traseira S5K2LD **congelada** por decisão do proprietário (19/11/2026), sem imagem. Patches 0129–0131 (`6fbfd11`, `684fd4c`, `25e9c3d`) com parâmetros de bring-up em `/sys/module/{exynos990_csis,phy_exynos990_mipi_csi}/parameters` (`potf`, `order`, `delay_ms`, `lineage_reset`, `settle`) e vsel do S2MPS22. Os padrões mantêm o comportamento do 0128; para captura só por DMA use `potf=1`. Diagnóstico em `checks/camera-0129.md` (`457cc33`, `263a48c`): sensor a 30 fps, toda escrita do código Samsung confirmada no hardware, pacotes C-PHY corrompidos (ERR_ID/CRC) desde o 1º quadro. Para retomar: dump do LineageOS com `debug_csi` (exige GPT/userdata/root). O aparelho ficou no Arch com o kernel #12 (`a1040394…`).
 
 - [codex] commit `83c747b`: retorno ao LineageOS concluído; boot original de 59 MiB + GPTs restaurados com readback, somente entradas 13/33 alteradas, Recovery/DTBO iguais aos backups. Android 17/Lineage 24.0 boot_completed=1, SurfaceFlinger running, boot=sda13, lk3rd removido. Sem formatação userdata; snapshots e resultados no HD verificados. Resumo `checks/session-summary-2026-11-17.md`, evidência `checks/return-lineage.md`.
 
@@ -69,6 +73,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 
 ## Revisão
 
+- [ ] [claude] Câmera 0125–0129 (19/11/2026, kernel #9/#10, testado no aparelho). Corrige a anotação anterior do claude: a SysMMU fica **descartada** (`pattern=1` grava na RAM). O argumento de banda média estava errado: o CSIS recebe em rajada de ~2 Gpixel/s. Os mesmos erros aparecem a 88,8 e a 533 MHz. O DVFS do 0125 funciona (`set=0` é sucesso). Achados: (a) `potf=0`/OTF trava sem 3AA, então a captura só por DMA exige `potf=1`; o 0128 voltou ao caminho errado. (b) O enlace C-PHY entrega pacotes corrompidos (ERR_ID+CRC desde o 1º quadro) em toda combinação de ordem de reset e settle 3–14. Varredura em `checks/camera-0129.md`. Ação: medir registradores do PHY e do CSIS no LineageOS com a câmera aberta e comparar com o #10.
 - [ ] [codex] `checks/ufs-clocks-ram.md`: confirmação em driver Samsung atendida em `5f259df` (log antigo LT=0xbb); avaliar condição física/estratégia de armazenamento antes de instalação persistente e diagnosticar mensagem system scope bus no reboot. Retorno ao lk3rd foi confirmado, sem comprovar shutdown silencioso ou restauração completa.
 
 - [ ] [codex] Conferir a árvore de `research/ufs-clocks.md` e `checks/m2-device-test.md` (sem commit): leitura curta separada de escrita/power-mode; CMU_AUD é `pd_aud` disabled, não timeout ao energizar; `sda33` em 4 KiB e 1 MiB são zeros de comprimentos diferentes; “nenhum bloqueia o rootfs” saiu do check. Evidência independente segue em `research/ufs-clocks-codex.md`.

@@ -1,0 +1,102 @@
+From: Antigravity <antigravity@local>
+Subject: [PATCH] media: r8s-camera: boost ACPM DVFS INTCAM/CAM clocks during CSIS streaming
+
+Under 0124, CSIS receives real S5K2LD frames (FS=0xb, FE=0xb, vc0_frames=510
+in ~12.6s), but dout_cmu_csis_bus remains at its idle rate (88.8 MHz), causing
+ERR_OVER FIFO overflow and WDMA abort (ACTIVE_DMA_N_ABORTED=1, DMA_OTF_OVERLAP).
+
+Request ACPM DVFS INTCAM (id 11) and CAM (id 12) at 690 MHz after pd_csis is
+powered on via pm_runtime_resume_and_get(), matching Samsung's Exynos 990
+devfreq_intcam / devfreq_cam operating points without touching CMU_TOP gates
+directly.
+
+Signed-off-by: Antigravity <antigravity@local>
+---
+diff --git a/drivers/media/platform/samsung/exynos990-csis.c b/drivers/media/platform/samsung/exynos990-csis.c
+index 111111111..222222222 100644
+--- a/drivers/media/platform/samsung/exynos990-csis.c
++++ b/drivers/media/platform/samsung/exynos990-csis.c
+@@ -4,6 +4,7 @@
+  */
+ 
+ #include <linux/dma-mapping.h>
++#include <linux/firmware/samsung/exynos-acpm-protocol.h>
+ #include <linux/interrupt.h>
+ #include <linux/io.h>
+ #include <linux/iopoll.h>
+@@ -15,6 +16,7 @@
+ #include <linux/platform_device.h>
+ #include <linux/pm_runtime.h>
+ #include <linux/spinlock.h>
++#include <linux/units.h>
+ #include <media/media-device.h>
+ #include <media/media-entity.h>
+ #include <media/v4l2-async.h>
+@@ -67,6 +69,10 @@
+ #define CSIS_PAD_SOURCE			1
+ #define CSIS_PADS_NUM			2
+ 
++#define ACPM_DVFS_CHANNEL		5
++#define ACPM_DVFS_ID_INTCAM		11
++#define ACPM_DVFS_ID_CAM		12
++
+ struct exynos990_csis_buf {
+ 	struct vb2_v4l2_buffer vb;
+ 	struct list_head list;
+@@ -97,6 +103,7 @@ struct exynos990_csis {
+ 	struct exynos990_csis_buf *active_buf;
+ 	u32 sequence;
+ 	void __iomem *dma_mux;
++	struct acpm_handle *acpm;
+ 	bool dma_running;
+ 	int dma_irq;
+ };
+@@ -176,6 +183,25 @@ static int exynos990_csis_link(struct exynos990_csis *csis, bool enable)
+ 		if (ret < 0)
+ 			return ret;
+ 
++		if (csis->acpm) {
++			unsigned long intcam_r, cam_r;
++
++			csis->acpm->ops->dvfs.set_rate(csis->acpm, ACPM_DVFS_CHANNEL,
++						       ACPM_DVFS_ID_INTCAM,
++						       690 * HZ_PER_MHZ);
++			csis->acpm->ops->dvfs.set_rate(csis->acpm, ACPM_DVFS_CHANNEL,
++						       ACPM_DVFS_ID_CAM,
++						       690 * HZ_PER_MHZ);
++			intcam_r = csis->acpm->ops->dvfs.get_rate(csis->acpm,
++								  ACPM_DVFS_CHANNEL,
++								  ACPM_DVFS_ID_INTCAM);
++			cam_r = csis->acpm->ops->dvfs.get_rate(csis->acpm,
++							       ACPM_DVFS_CHANNEL,
++							       ACPM_DVFS_ID_CAM);
++			dev_info(csis->dev, "ACPM DVFS: INTCAM=%lu kHz CAM=%lu kHz\n",
++				 intcam_r / HZ_PER_KHZ, cam_r / HZ_PER_KHZ);
++		}
++
+ 		ret = phy_power_on(csis->phy);
+ 		if (ret) {
+ 			pm_runtime_put(csis->dev);
+@@ -521,6 +547,22 @@ static int exynos990_csis_probe(struct platform_device *pdev)
+ 		return dev_err_probe(dev, PTR_ERR(csis->phy),
+ 				     "failed to get csis_dphy\n");
+ 
++	{
++		struct device_node *acpm_np =
++			of_find_compatible_node(NULL, NULL,
++						"samsung,exynos990-acpm-ipc");
++		if (acpm_np) {
++			csis->acpm = devm_acpm_get_by_node(dev, acpm_np);
++			of_node_put(acpm_np);
++			if (IS_ERR(csis->acpm)) {
++				if (PTR_ERR(csis->acpm) == -EPROBE_DEFER)
++					return -EPROBE_DEFER;
++				dev_warn(dev, "no ACPM handle (%pe)\n", csis->acpm);
++				csis->acpm = NULL;
++			}
++		}
++	}
++
+ 	irq = platform_get_irq(pdev, 0);
+ 	if (irq < 0)
+ 		return irq;

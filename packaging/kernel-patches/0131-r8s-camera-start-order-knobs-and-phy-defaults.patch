@@ -1,0 +1,105 @@
+From: Claude <noreply@anthropic.com>
+Subject: [PATCH] r8s-camera: runtime sensor/CSIS start order and delay, log PHY reset defaults
+
+exynos990_csis.order (0: CSIS/PHY, delay, sensor; 1: sensor, delay,
+CSIS/PHY; 2: CSIS/PHY, sensor, delay, sensor off/on) and delay_ms, plus a
+one-shot log of the DCPHY bias/SD0 registers before the first write.
+Kernel #12: 15 order x delay runs show the same C-PHY error signature;
+the PHY reads all-zero before programming (no firmware state).
+Defaults keep the 0130 behaviour.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+diff --git a/drivers/media/platform/samsung/exynos990-csis.c b/drivers/media/platform/samsung/exynos990-csis.c
+--- a/drivers/media/platform/samsung/exynos990-csis.c
++++ b/drivers/media/platform/samsung/exynos990-csis.c
+@@ -78,6 +78,14 @@
+ module_param(potf, bool, 0644);
+ MODULE_PARM_DESC(potf, "POTF_ONLY + parallel WDMA input (Samsung potf=true) instead of OTF");
+ 
++static uint order;
++module_param(order, uint, 0644);
++MODULE_PARM_DESC(order, "0: CSIS/PHY, delay, sensor; 1: sensor, delay, CSIS/PHY; 2: CSIS/PHY, sensor, delay, sensor off/on");
++
++static uint delay_ms;
++module_param(delay_ms, uint, 0644);
++MODULE_PARM_DESC(delay_ms, "Delay used by the order parameter");
++
+ #define CSIS_PAD_SINK			0
+ #define CSIS_PAD_SOURCE			1
+ #define CSIS_PADS_NUM			2
+@@ -372,10 +380,22 @@
+ 		goto err_release;
+ 	}
+ 	csis->sequence = 0;
++	dev_info(csis->dev, "start: order=%u delay_ms=%u\n", order, delay_ms);
++
++	/* Order B: sensor already transmitting when the receiver comes up. */
++	if (order == 1 && !pattern) {
++		ret = v4l2_subdev_call(csis->sensor_sd, video, s_stream, 1);
++		if (ret)
++			goto err_release;
++		msleep(delay_ms);
++	}
+ 
+ 	ret = exynos990_csis_link(csis, true);
+-	if (ret)
++	if (ret) {
++		if (order == 1 && !pattern)
++			v4l2_subdev_call(csis->sensor_sd, video, s_stream, 0);
+ 		goto err_release;
++	}
+ 
+ 	writel(0, csis->dma_mux); /* CSIS0 OTF -> WDMA2 */
+ 	{
+@@ -416,9 +436,18 @@
+ 		       csis->dma_top_regs + TEST_PATTERN_ON);
+ 		dev_info(csis->dev, "WDMA test pattern enabled (%ux%u @ 30fps)\n",
+ 			 csis->pix.width, csis->pix.height);
+-	} else {
++	} else if (order != 1) {
++		if (order == 0)
++			msleep(delay_ms);	/* order A: receiver armed, then wait */
+ 		ret = v4l2_subdev_call(csis->sensor_sd, video, s_stream, 1);
++		/* Order C: re-emit the sensor start with the receiver already armed. */
++		if (!ret && order == 2) {
++			msleep(delay_ms);
++			v4l2_subdev_call(csis->sensor_sd, video, s_stream, 0);
++			ret = v4l2_subdev_call(csis->sensor_sd, video, s_stream, 1);
++		}
+ 		if (ret) {
++			v4l2_subdev_call(csis->sensor_sd, video, s_stream, 0);
+ 			exynos990_csis_stop_dma(csis);
+ 			exynos990_csis_link(csis, false);
+ 			goto err_release;
+diff --git a/drivers/phy/samsung/phy-exynos990-mipi-csi.c b/drivers/phy/samsung/phy-exynos990-mipi-csi.c
+--- a/drivers/phy/samsung/phy-exynos990-mipi-csi.c
++++ b/drivers/phy/samsung/phy-exynos990-mipi-csi.c
+@@ -33,6 +33,7 @@
+ 	u32 iso_offset;
+ 	u32 reset_bit;
+ 	bool has_reset;
++	bool logged_defaults;
+ 	struct regulator_bulk_data supplies[2];
+ 	struct phy *phy;
+ };
+@@ -78,6 +79,19 @@
+ 	dev_info(state->dev, "C-PHY power on: settle=%u reset=%s\n", settle,
+ 		 lineage_reset ? "held-while-programming" : "released-first");
+ 
++	/* One-shot probe: what reset/firmware left in the PHY before we write it. */
++	if (!state->logged_defaults) {
++		void __iomem *d = state->regs + 0x100;
++
++		state->logged_defaults = true;
++		dev_info(state->dev, "defaults bias %08x %08x %08x %08x SD0 %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x %08x\n",
++			 readl(state->bias), readl(state->bias + 4), readl(state->bias + 8),
++			 readl(state->bias + 0x10), readl(d), readl(d + 0x04), readl(d + 0x08),
++			 readl(d + 0x0c), readl(d + 0x10), readl(d + 0x14), readl(d + 0x18),
++			 readl(d + 0x1c), readl(d + 0x20), readl(d + 0x24), readl(d + 0x30),
++			 readl(d + 0x34), readl(d + 0x40), readl(d + 0x64), readl(d + 0x68));
++	}
++
+ 	for (int i = 0; i < 3; i++)
+ 		writel(0, state->regs + 0x100 + i * 0x100);
+ 	usleep_range(200, 250);

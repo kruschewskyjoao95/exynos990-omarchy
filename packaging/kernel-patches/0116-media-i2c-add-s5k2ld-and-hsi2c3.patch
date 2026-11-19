@@ -1,0 +1,238 @@
+From: Antigravity <antigravity@local>
+Subject: [PATCH] media: i2c: add s5k2ld sensor driver and hsi2c_3 DTS node
+
+Add a V4L2 I2C subdev driver for the rear main S5K2LD sensor and enable
+usi_cam0 / hsi2c_3 (0x10580000) in exynos990.dtsi.
+
+Signed-off-by: Antigravity <antigravity@local>
+---
+diff --git a/arch/arm64/boot/dts/exynos/exynos990.dtsi b/arch/arm64/boot/dts/exynos/exynos990.dtsi
+index 000000000..000000000 100644
+--- a/arch/arm64/boot/dts/exynos/exynos990.dtsi
++++ b/arch/arm64/boot/dts/exynos/exynos990.dtsi
+@@ -734,6 +734,37 @@
+ 		 * child. The S2DOS05 powers the AMOLED panel (ELVSS) AND the touch rails
+ 		 * (LDO2 = tsp_io 1.8V, LDO3 = tsp_avdd 3.0V); enabling REG 0x03 bits 1+2
+ 		 * should finally wake the Y79A touch chip on hsi2c@108d0000. */
++		usi_cam0: usi@105800c0 {
++			compatible = "samsung,exynos850-usi";
++			reg = <0x105800c0 0x20>;
++			ranges;
++			#address-cells = <1>;
++			#size-cells = <1>;
++			clocks = <&tsp_i2c_clk>, <&tsp_i2c_clk>;
++			clock-names = "pclk", "ipclk";
++			samsung,sysreg = <&sysreg_peric0 0x100c>;
++			samsung,mode = <3>; /* USI_V2_I2C */
++			status = "okay";
++
++			hsi2c_3: i2c@10580000 {
++				compatible = "samsung,exynosautov9-hsi2c";
++				reg = <0x10580000 0xc0>;
++				interrupts = <GIC_SPI 400 IRQ_TYPE_LEVEL_HIGH>;
++				#address-cells = <1>;
++				#size-cells = <0>;
++				clocks = <&tsp_i2c_clk>, <&tsp_i2c_clk>;
++				clock-names = "hsi2c", "hsi2c_pclk";
++				pinctrl-names = "default";
++				pinctrl-0 = <&hsi2c3_bus>;
++				status = "okay";
++
++				s5k2ld: camera@10 {
++					compatible = "samsung,s5k2ld";
++					reg = <0x10>;
++				};
++			};
++		};
++
+ 		usi_dp: usi@105900c0 {
+ 			compatible = "samsung,exynos850-usi";
+ 			reg = <0x105900c0 0x20>;
+diff --git a/drivers/media/i2c/Kconfig b/drivers/media/i2c/Kconfig
+index 000000000..000000000 100644
+--- a/drivers/media/i2c/Kconfig
++++ b/drivers/media/i2c/Kconfig
+@@ -684,6 +684,14 @@
+ 	  This is a V4L2 sensor driver for Samsung S5K5BAF 2M
+ 	  camera sensor with an embedded SoC image signal processor.
+ 
++config VIDEO_S5K2LD
++	tristate "Samsung S5K2LD sensor support"
++	depends on I2C && VIDEO_DEV
++	select V4L2_FWNODE
++	help
++	  This is a V4L2 sensor driver for the Samsung S5K2LD MIPI CSI-2
++	  camera sensor.
++
+ config VIDEO_S5K6A3
+ 	tristate "Samsung S5K6A3 sensor support"
+ 	help
+diff --git a/drivers/media/i2c/Makefile b/drivers/media/i2c/Makefile
+index 000000000..000000000 100644
+--- a/drivers/media/i2c/Makefile
++++ b/drivers/media/i2c/Makefile
+@@ -119,6 +119,7 @@
+ obj-$(CONFIG_VIDEO_RJ54N1) += rj54n1cb0c.o
+ obj-$(CONFIG_VIDEO_S5C73M3) += s5c73m3/
+ obj-$(CONFIG_VIDEO_S5K5BAF) += s5k5baf.o
++obj-$(CONFIG_VIDEO_S5K2LD) += s5k2ld.o
+ obj-$(CONFIG_VIDEO_S5K6A3) += s5k6a3.o
+ obj-$(CONFIG_VIDEO_SAA6588) += saa6588.o
+ obj-$(CONFIG_VIDEO_SAA6752HS) += saa6752hs.o
+diff --git a/drivers/media/i2c/s5k2ld.c b/drivers/media/i2c/s5k2ld.c
+new file mode 100644
+index 000000000..000000000
+--- /dev/null
++++ b/drivers/media/i2c/s5k2ld.c
+@@ -0,0 +1,151 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Samsung S5K2LD MIPI CSI-2 image sensor V4L2 driver
++ */
++
++#include <linux/delay.h>
++#include <linux/i2c.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <media/media-entity.h>
++#include <media/v4l2-async.h>
++#include <media/v4l2-subdev.h>
++
++#define S5K2LD_REG_CHIP_ID	0x0000
++#define S5K2LD_REG_STREAM	0x0100
++
++struct s5k2ld {
++	struct i2c_client *client;
++	struct v4l2_subdev sd;
++	struct media_pad pad;
++	struct v4l2_mbus_framefmt fmt;
++};
++
++static inline struct s5k2ld *to_s5k2ld(struct v4l2_subdev *sd)
++{
++	return container_of(sd, struct s5k2ld, sd);
++}
++
++static int s5k2ld_read_reg16(struct i2c_client *client, u16 reg, u16 *val)
++{
++	u8 buf[2] = { reg >> 8, reg & 0xff };
++	u8 rx[2] = { 0, 0 };
++	struct i2c_msg msgs[2] = {
++		{ .addr = client->addr, .flags = 0, .len = 2, .buf = buf },
++		{ .addr = client->addr, .flags = I2C_M_RD, .len = 2, .buf = rx },
++	};
++	int ret = i2c_transfer(client->adapter, msgs, 2);
++
++	if (ret != 2)
++		return ret < 0 ? ret : -EIO;
++	*val = (rx[0] << 8) | rx[1];
++	return 0;
++}
++
++static int s5k2ld_write_reg16(struct i2c_client *client, u16 reg, u16 val)
++{
++	u8 buf[4] = { reg >> 8, reg & 0xff, val >> 8, val & 0xff };
++	int ret = i2c_master_send(client, buf, 4);
++
++	return ret == 4 ? 0 : (ret < 0 ? ret : -EIO);
++}
++
++static int s5k2ld_s_stream(struct v4l2_subdev *sd, int enable)
++{
++	struct s5k2ld *sensor = to_s5k2ld(sd);
++
++	return s5k2ld_write_reg16(sensor->client, S5K2LD_REG_STREAM,
++				  enable ? 0x0100 : 0x0000);
++}
++
++static int s5k2ld_get_fmt(struct v4l2_subdev *sd,
++			  struct v4l2_subdev_state *sd_state,
++			  struct v4l2_subdev_format *format)
++{
++	struct s5k2ld *sensor = to_s5k2ld(sd);
++
++	format->format = sensor->fmt;
++	return 0;
++}
++
++static const struct v4l2_subdev_video_ops s5k2ld_video_ops = {
++	.s_stream = s5k2ld_s_stream,
++};
++
++static const struct v4l2_subdev_pad_ops s5k2ld_pad_ops = {
++	.get_fmt = s5k2ld_get_fmt,
++	.set_fmt = s5k2ld_get_fmt,
++};
++
++static const struct v4l2_subdev_ops s5k2ld_subdev_ops = {
++	.video = &s5k2ld_video_ops,
++	.pad = &s5k2ld_pad_ops,
++};
++
++static int s5k2ld_probe(struct i2c_client *client)
++{
++	struct device *dev = &client->dev;
++	struct s5k2ld *sensor;
++	u16 chip_id = 0;
++	int ret;
++
++	sensor = devm_kzalloc(dev, sizeof(*sensor), GFP_KERNEL);
++	if (!sensor)
++		return -ENOMEM;
++
++	sensor->client = client;
++	sensor->fmt.width = 4032;
++	sensor->fmt.height = 3024;
++	sensor->fmt.code = MEDIA_BUS_FMT_SRGGB10_1X10;
++	sensor->fmt.field = V4L2_FIELD_NONE;
++	sensor->fmt.colorspace = V4L2_COLORSPACE_RAW;
++
++	ret = s5k2ld_read_reg16(client, S5K2LD_REG_CHIP_ID, &chip_id);
++	if (ret)
++		dev_warn(dev, "s5k2ld: I2C chip-id read failed (%d) - sensor may need MCLK/power\n",
++			 ret);
++	else
++		dev_info(dev, "s5k2ld: detected chip_id 0x%04x\n", chip_id);
++
++	v4l2_i2c_subdev_init(&sensor->sd, client, &s5k2ld_subdev_ops);
++	sensor->sd.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
++	sensor->pad.flags = MEDIA_PAD_FL_SOURCE;
++	ret = media_entity_pads_init(&sensor->sd.entity, 1, &sensor->pad);
++	if (ret)
++		return ret;
++
++	ret = v4l2_async_register_subdev_sensor(&sensor->sd);
++	if (ret) {
++		media_entity_cleanup(&sensor->sd.entity);
++		return ret;
++	}
++
++	return 0;
++}
++
++static void s5k2ld_remove(struct i2c_client *client)
++{
++	struct v4l2_subdev *sd = i2c_get_clientdata(client);
++
++	v4l2_async_unregister_subdev(sd);
++	media_entity_cleanup(&sd->entity);
++}
++
++static const struct of_device_id s5k2ld_of_match[] = {
++	{ .compatible = "samsung,s5k2ld" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, s5k2ld_of_match);
++
++static struct i2c_driver s5k2ld_i2c_driver = {
++	.driver = {
++		.name = "s5k2ld",
++		.of_match_table = s5k2ld_of_match,
++	},
++	.probe = s5k2ld_probe,
++	.remove = s5k2ld_remove,
++};
++module_i2c_driver(s5k2ld_i2c_driver);
++
++MODULE_DESCRIPTION("Samsung S5K2LD MIPI CSI-2 image sensor driver");
++MODULE_LICENSE("GPL");

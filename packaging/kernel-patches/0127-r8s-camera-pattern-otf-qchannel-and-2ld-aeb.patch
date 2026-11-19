@@ -1,0 +1,72 @@
+From: Antigravity <antigravity@local>
+Subject: [PATCH] media: r8s-camera: use OTF DMA input for test pattern, enable QCHANNEL on stop, disable S5K2LD AEB
+
+- Use DMA_DATA_CTRL=0 (OTF) when pattern=1 so the CSISX4 WDMA internal test
+  pattern generator feeds WDMA2.
+- Set QCHANNEL_EN (BIT(20)) in CSIS_CMN_CTRL when disabling CSIS (matching
+  LineageOS csi_hw_disable) to allow pd_csis to power off cleanly.
+- In s5k2ld, disable AEB (0xFCFC=0x4000, 0x0E0B=0x00), wrap stream-on in
+  group_param_hold (0x0104), and log 0x0340/0x034C/0x034E readback.
+
+Signed-off-by: Antigravity <antigravity@local>
+---
+diff --git a/drivers/media/platform/samsung/exynos990-csis.c b/drivers/media/platform/samsung/exynos990-csis.c
+index 111111111..222222222 100644
+--- a/drivers/media/platform/samsung/exynos990-csis.c
++++ b/drivers/media/platform/samsung/exynos990-csis.c
+@@ -267,6 +267,7 @@ static int exynos990_csis_link(struct exynos990_csis *csis, bool enable)
+ 		writel(0, csis->regs + CSIS_PHY_CMN_CTRL);
+ 		val = readl(csis->regs + CSIS_CMN_CTRL);
+ 		val &= ~CSIS_CMN_CTRL_CSI_EN;
++		val |= BIT(20); /* QCHANNEL_EN for safe pd_csis power-off */
+ 		writel(val, csis->regs + CSIS_CMN_CTRL);
+ 		phy_power_off(csis->phy);
+ 		pm_runtime_put(csis->dev);
+@@ -383,7 +384,7 @@ static int exynos990_csis_start_streaming(struct vb2_queue *vq, unsigned int cou
+ 	writel(0x4, csis->dma_regs + DMA0_FMT); /* U10BIT_PACK */
+ 	writel(csis->pix.width, csis->dma_regs + DMA0_RESOL);
+ 	writel(0, csis->dma_cmn_regs + 0x001c); /* RAW10 OTF_FORMAT */
+-	writel(1, csis->dma_cmn_regs + DMA_DATA_CTRL); /* parallel input (POTF_ONLY) */
++	writel(pattern ? 0 : 1, csis->dma_cmn_regs + DMA_DATA_CTRL);
+ 	writel(readl(csis->dma_cmn_regs + DMA_INT_SRC), csis->dma_cmn_regs + DMA_INT_SRC);
+ 	spin_lock_irqsave(&csis->buf_lock, flags);
+ 	csis->dma_running = true;
+diff --git a/drivers/media/i2c/s5k2ld.c b/drivers/media/i2c/s5k2ld.c
+index 111111111..222222222 100644
+--- a/drivers/media/i2c/s5k2ld.c
++++ b/drivers/media/i2c/s5k2ld.c
+@@ -206,7 +206,7 @@ static int s5k2ld_s_stream(struct v4l2_subdev *sd, int enable)
+ 	if (enable) {
+ 		const u32 *global = sensor_2ld_setfile_A_Global_A2;
+ 		size_t count = ARRAY_SIZE(sensor_2ld_setfile_A_Global_A2);
+-		u16 pll;
++		u16 pll, fll = 0, xout = 0, yout = 0;
+ 
+ 		if (sensor->revision == 0xa301) {
+ 			global = sensor_2ld_setfile_A_Global_A3;
+@@ -223,13 +223,24 @@ static int s5k2ld_s_stream(struct v4l2_subdev *sd, int enable)
+ 		if (ret)
+ 			return dev_err_probe(&sensor->client->dev, ret, "mode setfile\n");
+ 
++		/* Disable AEB (matches LineageOS is-cis-2ld.c) */
++		s5k2ld_write_reg16(sensor->client, 0xFCFC, 0x4000);
++		s5k2ld_write_reg8(sensor->client, 0x0E0B, 0x00);
++
+ 		ret = s5k2ld_read_reg16(sensor->client, 0x0310, &pll);
+ 		if (ret)
+ 			return dev_err_probe(&sensor->client->dev, ret, "MIPI PLL read\n");
+-		dev_info(&sensor->client->dev, "mode loaded, PLL 0x0310=%#x\n", pll);
++		s5k2ld_read_reg16(sensor->client, 0x0340, &fll);
++		s5k2ld_read_reg16(sensor->client, 0x034C, &xout);
++		s5k2ld_read_reg16(sensor->client, 0x034E, &yout);
++		dev_info(&sensor->client->dev,
++			 "mode loaded, PLL 0x0310=%#x FLL=%#x out=%ux%u\n",
++			 pll, fll, xout, yout);
++		s5k2ld_write_reg8(sensor->client, 0x0104, 0x01);
+ 		ret = s5k2ld_write_reg16(sensor->client, 0x0bcc, 0x0100);
+ 		if (!ret)
+ 			ret = s5k2ld_write_reg16(sensor->client, S5K2LD_REG_STREAM, 0x0100);
++		s5k2ld_write_reg8(sensor->client, 0x0104, 0x00);
+ 		if (ret)
+ 			return dev_err_probe(&sensor->client->dev, ret, "stream on\n");
+ 		dev_info(&sensor->client->dev, "stream on complete\n");

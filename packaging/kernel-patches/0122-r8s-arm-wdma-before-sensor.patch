@@ -1,0 +1,240 @@
+Arm CSIS v5.3 WDMA before S5K2LD stream-on, route the parallel path.
+
+--- a/drivers/media/platform/samsung/exynos990-csis.c
++++ b/drivers/media/platform/samsung/exynos990-csis.c
+@@ -99,11 +99,6 @@
+ 	int dma_irq;
+ };
+ 
+-static inline struct exynos990_csis *sd_to_csis(struct v4l2_subdev *sd)
+-{
+-	return container_of(sd, struct exynos990_csis, sd);
+-}
+-
+ /* Queue access and slot programming are serialized by buf_lock. */
+ static void exynos990_csis_next_buf(struct exynos990_csis *csis)
+ {
+@@ -171,9 +166,8 @@
+ 	return IRQ_HANDLED;
+ }
+ 
+-static int exynos990_csis_s_stream(struct v4l2_subdev *sd, int enable)
+-{
+-	struct exynos990_csis *csis = sd_to_csis(sd);
++static int exynos990_csis_link(struct exynos990_csis *csis, bool enable)
++{
+ 	u32 val;
+ 	int ret;
+ 
+@@ -195,9 +189,14 @@
+ 			goto err_phy;
+ 		writel(BIT(31), csis->regs + CSIS_LRTE_CONFIG);
+ 		writel(BIT(23), csis->regs + CSIS_DBG_OPTION_SUITE);
+-		writel((2 << 12) | (0x2B << 2), csis->regs + CSIS_ISP_CONFIG_CH0);
++		writel((2 << 12) | BIT(11) | (0x2B << 2), csis->regs + CSIS_ISP_CONFIG_CH0);
+ 		writel((csis->pix.height << 16) | csis->pix.width,
+ 		       csis->regs + CSIS_ISP_RESOL_CH0);
++		/* The mode also sends VC1 PDAF and VC0 embedded data. */
++		writel(BIT(16) | (2 << 12) | BIT(11) | (0x2b << 2), csis->regs + 0x0050);
++		writel((378 << 16) | 2016, csis->regs + 0x0054);
++		writel((2 << 12) | BIT(11) | (0x12 << 2), csis->regs + 0x0070);
++		writel((2 << 16) | 2016, csis->regs + 0x0074);
+ 		writel(0x1f, csis->regs + CSIS_PHY_CMN_CTRL);
+ 		writel(0xf, csis->regs + CSIS_UPD_SDW);
+ 		val = readl(csis->regs + CSIS_CMN_CTRL) | CSIS_CMN_CTRL_PHY_SEL_CPHY |
+@@ -205,20 +204,23 @@
+ 		writel(val, csis->regs + CSIS_CMN_CTRL);
+ 		writel(0, csis->regs + 0x0020); /* FS_INT_MSK */
+ 		writel(0, csis->regs + 0x0028); /* FE_INT_MSK */
+-		writel(0x00fff07f, csis->regs + CSIS_INT_MSK0);
+-
+-		if (csis->sensor_sd) {
+-			ret = v4l2_subdev_call(csis->sensor_sd, video, s_stream, 1);
+-			if (ret && ret != -ENOIOCTLCMD) {
+-				writel(0, csis->regs + CSIS_INT_MSK0);
+-				writel(0, csis->regs + CSIS_PHY_CMN_CTRL);
+-				writel(0, csis->regs + CSIS_CMN_CTRL);
+-				goto err_phy;
+-			}
+-		}
++		/* WDMA frame end is the only IRQ needed for memory capture. */
++		writel(0, csis->regs + CSIS_INT_MSK0);
++		writel(0, csis->regs + CSIS_INT_MSK1);
++		writel(0, csis->regs + 0x0610); /* lost FS mask */
++		writel(0, csis->regs + 0x0618); /* lost FE mask */
++		writel(0, csis->regs + 0x0620); /* VRES mismatch mask */
++		writel(0, csis->regs + 0x0628); /* HRES mismatch mask */
++		writel(0, csis->regs + 0x0630); /* line end mask */
++
+ 	} else {
+-		if (csis->sensor_sd)
+-			v4l2_subdev_call(csis->sensor_sd, video, s_stream, 0);
++		if (!csis->sequence)
++			dev_info(csis->dev, "FS=%#x FE=%#x line=%#x lost=%#x/%#x sizeerr=%#x/%#x DMA active=%#x fmt=%#x\n",
++				 readl(csis->regs + 0x0024), readl(csis->regs + 0x002c),
++				 readl(csis->regs + 0x0634), readl(csis->regs + 0x0614),
++				 readl(csis->regs + 0x061c), readl(csis->regs + 0x0624),
++				 readl(csis->regs + 0x062c), readl(csis->dma_regs + 0x0090),
++				 readl(csis->dma_regs + 0x0098));
+ 		if (csis->sequence == 0)
+ 			dev_info(csis->dev, "csis diag: vc0_frames=%u int0=0x%08x int1=0x%08x phy_st=0x%08x dma_int=0x%08x dma_err=0x%08x\n",
+ 				 readl(csis->regs + 0x0500),
+@@ -228,6 +230,7 @@
+ 				 csis->dma_cmn_regs ? readl(csis->dma_cmn_regs + DMA_INT_SRC) : 0,
+ 				 csis->dma_cmn_regs ? readl(csis->dma_cmn_regs + DMA_ERR_CODE) : 0);
+ 		writel(0, csis->regs + CSIS_INT_MSK0);
++		writel(0, csis->dma_top_regs + COMMON_DMA_CTRL);
+ 		writel(0, csis->regs + CSIS_PHY_CMN_CTRL);
+ 		val = readl(csis->regs + CSIS_CMN_CTRL);
+ 		val &= ~CSIS_CMN_CTRL_CSI_EN;
+@@ -244,13 +247,7 @@
+ 	return ret;
+ }
+ 
+-static const struct v4l2_subdev_video_ops exynos990_csis_video_ops = {
+-	.s_stream = exynos990_csis_s_stream,
+-};
+-
+-static const struct v4l2_subdev_ops exynos990_csis_subdev_ops = {
+-	.video = &exynos990_csis_video_ops,
+-};
++static const struct v4l2_subdev_ops exynos990_csis_subdev_ops;
+ 
+ static int exynos990_csis_notify_bound(struct v4l2_async_notifier *notifier,
+ 				       struct v4l2_subdev *subdev,
+@@ -304,58 +301,8 @@
+ 	spin_unlock_irqrestore(&csis->buf_lock, flags);
+ }
+ 
+-static int exynos990_csis_start_streaming(struct vb2_queue *vq, unsigned int count)
+-{
+-	struct exynos990_csis *csis = vb2_get_drv_priv(vq);
+-	unsigned long flags;
+-	int ret;
+-
+-	if (!csis->sensor_sd) {
+-		ret = -ENOLINK;
+-		goto err_release;
+-	}
+-	csis->sequence = 0;
+-
+-	ret = exynos990_csis_s_stream(&csis->sd, 1);
+-	if (ret)
+-		goto err_release;
+-
+-	writel(0, csis->dma_mux); /* CSIS0 OTF -> WDMA2 */
+-	writel(readl(csis->dma_top_regs + COMMON_DMA_CTRL) | BIT(1),
+-	       csis->dma_top_regs + COMMON_DMA_CTRL);
+-
+-	writel(0x4, csis->dma_regs + DMA0_FMT); /* U10BIT_PACK */
+-	writel(csis->pix.width, csis->dma_regs + DMA0_RESOL);
+-	writel(0, csis->dma_cmn_regs + DMA_DATA_CTRL);
+-	writel(readl(csis->dma_cmn_regs + DMA_INT_SRC), csis->dma_cmn_regs + DMA_INT_SRC);
+-	spin_lock_irqsave(&csis->buf_lock, flags);
+-	csis->dma_running = true;
+-	writel(BIT(8), csis->dma_cmn_regs + DMA_INT_MASK);
+-	exynos990_csis_next_buf(csis);
+-	spin_unlock_irqrestore(&csis->buf_lock, flags);
+-
+-	return 0;
+-
+-err_release:
+-	spin_lock_irqsave(&csis->buf_lock, flags);
+-	if (csis->active_buf) {
+-		vb2_buffer_done(&csis->active_buf->vb.vb2_buf, VB2_BUF_STATE_QUEUED);
+-		csis->active_buf = NULL;
+-	}
+-	while (!list_empty(&csis->buf_list)) {
+-		struct exynos990_csis_buf *buf =
+-			list_first_entry(&csis->buf_list,
+-					 struct exynos990_csis_buf, list);
+-		list_del(&buf->list);
+-		vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_QUEUED);
+-	}
+-	spin_unlock_irqrestore(&csis->buf_lock, flags);
+-	return ret;
+-}
+-
+-static void exynos990_csis_stop_streaming(struct vb2_queue *vq)
+-{
+-	struct exynos990_csis *csis = vb2_get_drv_priv(vq);
++static void exynos990_csis_stop_dma(struct exynos990_csis *csis)
++{
+ 	unsigned long flags;
+ 
+ 	spin_lock_irqsave(&csis->buf_lock, flags);
+@@ -365,7 +312,73 @@
+ 	writel(0, csis->dma_cmn_regs + DMA_INT_MASK);
+ 	spin_unlock_irqrestore(&csis->buf_lock, flags);
+ 	synchronize_irq(csis->dma_irq);
+-	exynos990_csis_s_stream(&csis->sd, 0);
++}
++
++static int exynos990_csis_start_streaming(struct vb2_queue *vq, unsigned int count)
++{
++	struct exynos990_csis *csis = vb2_get_drv_priv(vq);
++	unsigned long flags;
++	int ret;
++
++	if (!csis->sensor_sd) {
++		ret = -ENOLINK;
++		goto err_release;
++	}
++	csis->sequence = 0;
++
++	ret = exynos990_csis_link(csis, true);
++	if (ret)
++		goto err_release;
++
++	writel(0, csis->dma_mux); /* CSIS0 OTF -> WDMA2 */
++	writel(readl(csis->dma_top_regs + COMMON_DMA_CTRL) | BIT(1),
++	       csis->dma_top_regs + COMMON_DMA_CTRL);
++
++	writel(0x4, csis->dma_regs + DMA0_FMT); /* U10BIT_PACK */
++	writel(csis->pix.width, csis->dma_regs + DMA0_RESOL);
++	writel(0, csis->dma_cmn_regs + 0x001c); /* RAW10 OTF_FORMAT */
++	writel(1, csis->dma_cmn_regs + DMA_DATA_CTRL); /* parallel input */
++	writel(readl(csis->dma_cmn_regs + DMA_INT_SRC), csis->dma_cmn_regs + DMA_INT_SRC);
++	spin_lock_irqsave(&csis->buf_lock, flags);
++	csis->dma_running = true;
++	writel(BIT(8), csis->dma_cmn_regs + DMA_INT_MASK);
++	exynos990_csis_next_buf(csis);
++	spin_unlock_irqrestore(&csis->buf_lock, flags);
++
++	ret = v4l2_subdev_call(csis->sensor_sd, video, s_stream, 1);
++	if (ret) {
++		exynos990_csis_stop_dma(csis);
++		exynos990_csis_link(csis, false);
++		goto err_release;
++	}
++
++	return 0;
++
++err_release:
++	spin_lock_irqsave(&csis->buf_lock, flags);
++	if (csis->active_buf) {
++		vb2_buffer_done(&csis->active_buf->vb.vb2_buf, VB2_BUF_STATE_QUEUED);
++		csis->active_buf = NULL;
++	}
++	while (!list_empty(&csis->buf_list)) {
++		struct exynos990_csis_buf *buf =
++			list_first_entry(&csis->buf_list,
++					 struct exynos990_csis_buf, list);
++		list_del(&buf->list);
++		vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_QUEUED);
++	}
++	spin_unlock_irqrestore(&csis->buf_lock, flags);
++	return ret;
++}
++
++static void exynos990_csis_stop_streaming(struct vb2_queue *vq)
++{
++	struct exynos990_csis *csis = vb2_get_drv_priv(vq);
++	unsigned long flags;
++
++	v4l2_subdev_call(csis->sensor_sd, video, s_stream, 0);
++	exynos990_csis_stop_dma(csis);
++	exynos990_csis_link(csis, false);
+ 
+ 	spin_lock_irqsave(&csis->buf_lock, flags);
+ 	if (csis->active_buf) {

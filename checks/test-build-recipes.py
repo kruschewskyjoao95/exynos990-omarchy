@@ -86,12 +86,16 @@ esac
         self.assertEqual((self.root / "trace").read_text().splitlines(),
                          ["apply 0001-port.patch", f"apply {BASELINE}", f"apply {CLOCK_FIXES}", "--set-str EXTRA_FIRMWARE "])
 
-    def test_series_order_and_thermal_config(self):
+    def test_series_order_and_kernel_config(self):
         result = self.run_recipe(patchset="series")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual((self.root / "trace").read_text().splitlines(),
                          ["apply 0001-port.patch"] + [f"apply {p}" for p in self.series]
-                         + ["--set-str EXTRA_FIRMWARE ", "-e DEVFREQ_THERMAL"])
+                         + ["--set-str EXTRA_FIRMWARE ", "-e DEVFREQ_THERMAL",
+                            "-e MEDIA_SUPPORT -e MEDIA_PLATFORM_SUPPORT -e MEDIA_PLATFORM_DRIVERS "
+                            "-e VIDEO_DEV -e MEDIA_CONTROLLER",
+                            "-e REGULATOR_S2MPS22_ACPM -e PHY_EXYNOS990_MIPI_CSI "
+                            "-e VIDEO_EXYNOS990_CSIS -e VIDEO_S5K2LD"])
 
     def test_dtbs_rejected_before_changing_outputs(self):
         self.put("out/boot/kernel-release.txt", "existing")

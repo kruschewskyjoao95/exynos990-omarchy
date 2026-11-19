@@ -1,0 +1,216 @@
+From: Antigravity <antigravity@local>
+Subject: [PATCH] media: r8s: configure DCPHY lanes, PHY_CMN_CTRL, COMMON_DMA, FRM_END IRQ
+
+Program the Exynos 990 MIPI DCPHY bias and 4 data/clock lanes, enable
+CSIS PHY_CMN_CTRL, initialize CSISX4 COMMON_DMA (0x170e0000), and mask
+VC0 DMA_FRM_END (BIT(8)) in DMA_INT_MASK.
+
+Signed-off-by: Antigravity <antigravity@local>
+---
+diff --git a/arch/arm64/boot/dts/exynos/exynos990.dtsi b/arch/arm64/boot/dts/exynos/exynos990.dtsi
+index 000000000..000000000 100644
+--- a/arch/arm64/boot/dts/exynos/exynos990.dtsi
++++ b/arch/arm64/boot/dts/exynos/exynos990.dtsi
+@@ -1178,8 +1178,9 @@
+ 		compatible = "samsung,exynos990-csis";
+ 		reg = <0x17030000 0x1000>,
+ 		      <0x170c1000 0x100>,
+-		      <0x170c1400 0x100>;
+-		reg-names = "csi", "dma", "dma_cmn";
++		      <0x170c1400 0x100>,
++		      <0x170e0000 0x100>;
++		reg-names = "csi", "dma", "dma_cmn", "dma_top";
+ 		interrupts = <GIC_SPI 182 IRQ_TYPE_LEVEL_HIGH>,
+ 			     <GIC_SPI 188 IRQ_TYPE_LEVEL_HIGH>;
+ 		interrupt-names = "csi", "dma";
+diff --git a/drivers/phy/samsung/phy-exynos990-mipi-csi.c b/drivers/phy/samsung/phy-exynos990-mipi-csi.c
+index 000000000..000000000 100644
+--- a/drivers/phy/samsung/phy-exynos990-mipi-csi.c
++++ b/drivers/phy/samsung/phy-exynos990-mipi-csi.c
+@@ -3,6 +3,7 @@
+  * Samsung Exynos 990 MIPI CSI-2 D-PHY driver
+  */
+ 
++#include <linux/delay.h>
+ #include <linux/io.h>
+ #include <linux/mfd/syscon.h>
+ #include <linux/module.h>
+@@ -17,6 +18,7 @@
+ struct exynos990_mipi_csi_phy {
+ 	struct device *dev;
+ 	void __iomem *regs;
++	void __iomem *bias;
+ 	struct regmap *reg_pmu;
+ 	struct regmap *reg_reset;
+ 	u32 iso_offset;
+@@ -55,12 +57,52 @@
+ 		return ret;
+ 	}
+ 
++	/* Reset clock + 4 data lanes before analog/BIAS setup */
++	writel(0x00000000, state->regs + 0x0000);
++	for (int i = 0; i < 4; i++)
++		writel(0x00000000, state->regs + 0x0100 + (i * 0x100));
++	usleep_range(200, 250);
++
++	if (state->bias) {
++		writel(0x00000010, state->bias + 0x0000); /* M_BIAS_CON0 */
++		writel(0x00000110, state->bias + 0x0004); /* M_BIAS_CON1 */
++		writel(0x00003223, state->bias + 0x0008); /* M_BIAS_CON2 */
++	}
++
++	/* D-PHY clock lane */
++	writel(0x00001450, state->regs + 0x0004);
++	writel(0x00000008, state->regs + 0x0008);
++	writel(0x00000002, state->regs + 0x0010);
++	writel(0x00008680, state->regs + 0x0014);
++	writel(0x00004000, state->regs + 0x0018);
++	writel(0x00000301, state->regs + 0x0030);
++	writel(0x00000001, state->regs + 0x0000);
++
++	/* D-PHY 4 data lanes (settle=0x14, settle_clk_sel=1) */
++	for (int i = 0; i < 4; i++) {
++		void __iomem *d = state->regs + 0x0100 + (i * 0x100);
++
++		writel(0x00001450, d + 0x04);
++		writel(0x00000002, d + 0x10);
++		writel(0x00008680, d + 0x14);
++		writel(0x00004000, d + 0x18);
++		writel(0x00000114, d + 0x30);
++		writel(0x00000003, d + 0x34);
++		writel(0x0000081A, d + 0x50);
++		writel(0x00000001, d + 0x00);
++	}
++	usleep_range(200, 250);
++
+ 	return 0;
+ }
+ 
+ static int exynos990_mipi_csi_phy_power_off(struct phy *phy)
+ {
+ 	struct exynos990_mipi_csi_phy *state = phy_get_drvdata(phy);
++
++	writel(0x00000000, state->regs + 0x0000);
++	for (int i = 0; i < 4; i++)
++		writel(0x00000000, state->regs + 0x0100 + (i * 0x100));
+ 
+ 	regmap_update_bits(state->reg_pmu, state->iso_offset,
+ 			   EXYNOS_MIPI_PHY_ISO_BYPASS, 0);
+@@ -104,6 +146,8 @@
+ 	state->regs = devm_platform_ioremap_resource(pdev, 0);
+ 	if (IS_ERR(state->regs))
+ 		return PTR_ERR(state->regs);
++
++	state->bias = devm_ioremap(dev, 0x170D1000, 0x100);
+ 
+ 	state->reg_pmu = syscon_regmap_lookup_by_phandle(np, "samsung,pmu-syscon");
+ 	if (IS_ERR(state->reg_pmu))
+diff --git a/drivers/media/platform/samsung/exynos990-csis.c b/drivers/media/platform/samsung/exynos990-csis.c
+index 000000000..000000000 100644
+--- a/drivers/media/platform/samsung/exynos990-csis.c
++++ b/drivers/media/platform/samsung/exynos990-csis.c
+@@ -33,6 +33,8 @@
+ #define CSIS_INT_SRC1			0x001c
+ #define CSIS_ISP_CONFIG_CH0		0x0040
+ #define CSIS_ISP_RESOL_CH0		0x0044
++#define CSIS_PHY_STATUS			0x0700
++#define CSIS_PHY_CMN_CTRL		0x0704
+ 
+ #define CSIS_CMN_CTRL_CSI_EN		BIT(0)
+ #define CSIS_CMN_CTRL_SW_RESET		BIT(1)
+@@ -52,6 +54,14 @@
+ #define DMA_INT_MASK			0x0004
+ #define DMA_INT_SRC			0x0008
+ #define DMA_CMN_CTRL			0x0014
++#define DMA_ERR_CODE			0x0018
++
++/* CSISX4 WDMA Common (0x170e0000) */
++#define COMMON_DMA_ARB_PRI		0x0000
++#define COMMON_DMA_CTRL			0x0008
++#define COMMON_DMA_SRAM_SPLIT		0x000c
++#define COMMON_DMA_MATRIX		0x0010
++#define COMMON_DMA_CLK_CTRL		0x0014
+ 
+ #define CSIS_PAD_SINK			0
+ #define CSIS_PAD_SOURCE			1
+@@ -67,6 +77,7 @@
+ 	void __iomem *regs;
+ 	void __iomem *dma_regs;
+ 	void __iomem *dma_cmn_regs;
++	void __iomem *dma_top_regs;
+ 	struct phy *phy;
+ 	struct v4l2_device v4l2_dev;
+ 	struct media_device mdev;
+@@ -118,6 +129,9 @@
+ 	if (src)
+ 		writel(src, csis->dma_cmn_regs + DMA_INT_SRC);
+ 
++	if (!(src & BIT(8)))
++		return IRQ_HANDLED;
++
+ 	spin_lock_irqsave(&csis->buf_lock, flags);
+ 	if (csis->active_buf) {
+ 		struct exynos990_csis_buf *done = csis->active_buf;
+@@ -165,8 +179,9 @@
+ 		writel((0x2B << 2), csis->regs + CSIS_ISP_CONFIG_CH0);
+ 		writel((csis->pix.height << 16) | csis->pix.width,
+ 		       csis->regs + CSIS_ISP_RESOL_CH0);
++		writel(0x1f, csis->regs + CSIS_PHY_CMN_CTRL);
+ 		val = ((csis->num_lanes - 1) << CSIS_CMN_CTRL_LANE_NUM_SHIFT) |
+-		      CSIS_CMN_CTRL_UPDATE_SHADOW | CSIS_CMN_CTRL_CSI_EN;
++		      (0xf << 16) | CSIS_CMN_CTRL_CSI_EN;
+ 		writel(val, csis->regs + CSIS_CMN_CTRL);
+ 		writel(0xffffffff, csis->regs + CSIS_INT_MSK0);
+ 
+@@ -182,7 +197,15 @@
+ 	} else {
+ 		if (csis->sensor_sd)
+ 			v4l2_subdev_call(csis->sensor_sd, video, s_stream, 0);
++		if (csis->sequence == 0)
++			dev_info(csis->dev, "csis diag: int0=0x%08x int1=0x%08x phy_st=0x%08x dma_int=0x%08x dma_err=0x%08x\n",
++				 readl(csis->regs + CSIS_INT_SRC0),
++				 readl(csis->regs + CSIS_INT_SRC1),
++				 readl(csis->regs + CSIS_PHY_STATUS),
++				 csis->dma_cmn_regs ? readl(csis->dma_cmn_regs + DMA_INT_SRC) : 0,
++				 csis->dma_cmn_regs ? readl(csis->dma_cmn_regs + DMA_ERR_CODE) : 0);
+ 		writel(0, csis->regs + CSIS_INT_MSK0);
++		writel(0, csis->regs + CSIS_PHY_CMN_CTRL);
+ 		val = readl(csis->regs + CSIS_CMN_CTRL);
+ 		val &= ~CSIS_CMN_CTRL_CSI_EN;
+ 		writel(val, csis->regs + CSIS_CMN_CTRL);
+@@ -262,6 +285,14 @@
+ 	ret = exynos990_csis_s_stream(&csis->sd, 1);
+ 	if (ret)
+ 		goto err_release;
++
++	if (csis->dma_top_regs) {
++		writel(0x6, csis->dma_top_regs + COMMON_DMA_ARB_PRI);
++		writel(BIT(1), csis->dma_top_regs + COMMON_DMA_CTRL);
++		writel(0x01400140, csis->dma_top_regs + COMMON_DMA_SRAM_SPLIT);
++		writel(0x0, csis->dma_top_regs + COMMON_DMA_MATRIX);
++		writel(0x1, csis->dma_top_regs + COMMON_DMA_CLK_CTRL);
++	}
+ 
+ 	if (csis->dma_regs && csis->dma_cmn_regs) {
+ 		spin_lock_irqsave(&csis->buf_lock, flags);
+@@ -280,7 +311,8 @@
+ 
+ 		writel(0, csis->dma_regs + DMA0_FMT);
+ 		writel(csis->pix.width, csis->dma_regs + DMA0_RESOL);
+-		writel(0xffffffff, csis->dma_cmn_regs + DMA_INT_MASK);
++		writel(0, csis->dma_cmn_regs + DMA_DATA_CTRL);
++		writel(BIT(8), csis->dma_cmn_regs + DMA_INT_MASK);
+ 		writel(DMA0_CTRL_ENABLE, csis->dma_regs + DMA0_CTRL);
+ 	}
+ 
+@@ -447,6 +479,10 @@
+ 	csis->dma_cmn_regs = devm_platform_ioremap_resource(pdev, 2);
+ 	if (IS_ERR(csis->dma_cmn_regs))
+ 		csis->dma_cmn_regs = NULL;
++
++	csis->dma_top_regs = devm_platform_ioremap_resource(pdev, 3);
++	if (IS_ERR(csis->dma_top_regs))
++		csis->dma_top_regs = NULL;
+ 
+ 	dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
+ 

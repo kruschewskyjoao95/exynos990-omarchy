@@ -1,0 +1,544 @@
+From: Antigravity <antigravity@local>
+Subject: [PATCH] media: samsung: exynos990-csis: add WDMA /dev/video* + media_device
+
+Extend exynos990-csis with CSIS_DMA0 VC0/Common registers, videobuf2-dma-contig,
+and media_device/video_device registration so /dev/video0 and /dev/media0 are
+exposed.
+
+Signed-off-by: Antigravity <antigravity@local>
+---
+diff --git a/arch/arm64/boot/dts/exynos/exynos990.dtsi b/arch/arm64/boot/dts/exynos/exynos990.dtsi
+index 000000000..000000000 100644
+--- a/arch/arm64/boot/dts/exynos/exynos990.dtsi
++++ b/arch/arm64/boot/dts/exynos/exynos990.dtsi
+@@ -1118,8 +1118,13 @@
+ 
+ 	csis0: csis@17030000 {
+ 		compatible = "samsung,exynos990-csis";
+-		reg = <0x17030000 0x1000>;
+-		interrupts = <GIC_SPI 182 IRQ_TYPE_LEVEL_HIGH>;
++		reg = <0x17030000 0x1000>,
++		      <0x170c1000 0x100>,
++		      <0x170c1400 0x100>;
++		reg-names = "csi", "dma", "dma_cmn";
++		interrupts = <GIC_SPI 182 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 188 IRQ_TYPE_LEVEL_HIGH>;
++		interrupt-names = "csi", "dma";
+ 		power-domains = <&pd_csis>;
+ 		phys = <&mipi_phy_csis0 0>;
+ 		phy-names = "csis_dphy";
+diff --git a/drivers/media/platform/samsung/Kconfig b/drivers/media/platform/samsung/Kconfig
+index 000000000..000000000 100644
+--- a/drivers/media/platform/samsung/Kconfig
++++ b/drivers/media/platform/samsung/Kconfig
+@@ -14,6 +14,7 @@
+ 	depends on VIDEO_DEV && MEDIA_CONTROLLER
+ 	depends on ARCH_EXYNOS || COMPILE_TEST
+ 	select V4L2_FWNODE
++	select VIDEOBUF2_DMA_CONTIG
+ 	help
+ 	  V4L2 subdevice driver for the Samsung Exynos 990 MIPI CSI-2
+ 	  receiver (CSIS v5.2).
+diff --git a/drivers/media/platform/samsung/exynos990-csis.c b/drivers/media/platform/samsung/exynos990-csis.c
+index 000000000..000000000 100644
+--- a/drivers/media/platform/samsung/exynos990-csis.c
++++ b/drivers/media/platform/samsung/exynos990-csis.c
+@@ -1,45 +1,82 @@
+ // SPDX-License-Identifier: GPL-2.0
+ /*
+- * Samsung Exynos 990 MIPI CSI-2 receiver (CSIS v5.2) V4L2 subdev driver
++ * Samsung Exynos 990 MIPI CSI-2 receiver (CSIS v5.2) + WDMA V4L2 driver
+  */
+ 
+ #include <linux/interrupt.h>
+ #include <linux/io.h>
+ #include <linux/module.h>
++#include <linux/mutex.h>
+ #include <linux/of.h>
+ #include <linux/phy/phy.h>
+ #include <linux/platform_device.h>
+ #include <linux/pm_runtime.h>
++#include <linux/spinlock.h>
++#include <media/media-device.h>
+ #include <media/media-entity.h>
+ #include <media/v4l2-device.h>
++#include <media/v4l2-ioctl.h>
+ #include <media/v4l2-subdev.h>
+-
+-#define CSIS_VERSION		0x0000
+-#define CSIS_CMN_CTRL		0x0004
+-#define CSIS_CLK_CTRL		0x0008
+-#define CSIS_INT_MSK0		0x0010
+-#define CSIS_INT_SRC0		0x0014
+-#define CSIS_INT_MSK1		0x0018
+-#define CSIS_INT_SRC1		0x001c
+-#define CSIS_ISP_CONFIG_CH0	0x0040
+-#define CSIS_ISP_RESOL_CH0	0x0044
++#include <media/videobuf2-dma-contig.h>
++#include <media/videobuf2-v4l2.h>
++
++#define CSIS_VERSION			0x0000
++#define CSIS_CMN_CTRL			0x0004
++#define CSIS_CLK_CTRL			0x0008
++#define CSIS_INT_MSK0			0x0010
++#define CSIS_INT_SRC0			0x0014
++#define CSIS_INT_MSK1			0x0018
++#define CSIS_INT_SRC1			0x001c
++#define CSIS_ISP_CONFIG_CH0		0x0040
++#define CSIS_ISP_RESOL_CH0		0x0044
+ 
+ #define CSIS_CMN_CTRL_CSI_EN		BIT(0)
+ #define CSIS_CMN_CTRL_SW_RESET		BIT(1)
+ #define CSIS_CMN_CTRL_LANE_NUM_SHIFT	8
+ #define CSIS_CMN_CTRL_UPDATE_SHADOW	BIT(16)
+ 
+-#define CSIS_PAD_SINK		0
+-#define CSIS_PAD_SOURCE		1
+-#define CSIS_PADS_NUM		2
++/* CSIS_DMA0 VC0 (0x170c1000) */
++#define DMA0_CTRL			0x0000
++#define DMA0_FMT			0x0004
++#define DMA0_ADDR1			0x0010
++#define DMA0_RESOL			0x00a4
++#define DMA0_FCNTSEQ			0x00b0
++#define DMA0_CTRL_ENABLE		BIT(0)
++
++/* CSIS_DMA0 Common (0x170c1400) */
++#define DMA_DATA_CTRL			0x0000
++#define DMA_INT_MASK			0x0004
++#define DMA_INT_SRC			0x0008
++#define DMA_CMN_CTRL			0x0014
++
++#define CSIS_PAD_SINK			0
++#define CSIS_PAD_SOURCE			1
++#define CSIS_PADS_NUM			2
++
++struct exynos990_csis_buf {
++	struct vb2_v4l2_buffer vb;
++	struct list_head list;
++};
+ 
+ struct exynos990_csis {
+ 	struct device *dev;
+ 	void __iomem *regs;
++	void __iomem *dma_regs;
++	void __iomem *dma_cmn_regs;
+ 	struct phy *phy;
++	struct v4l2_device v4l2_dev;
++	struct media_device mdev;
+ 	struct v4l2_subdev sd;
+ 	struct media_pad pads[CSIS_PADS_NUM];
+-	struct v4l2_mbus_framefmt format;
++	struct video_device vdev;
++	struct media_pad vdev_pad;
++	struct vb2_queue vb2_q;
++	struct v4l2_pix_format pix;
++	struct mutex lock;
++	spinlock_t buf_lock;
++	struct list_head buf_list;
++	struct exynos990_csis_buf *active_buf;
++	u32 sequence;
+ 	u32 num_lanes;
+ };
+ 
+@@ -58,6 +95,44 @@
+ 		writel(src0, csis->regs + CSIS_INT_SRC0);
+ 	if (src1)
+ 		writel(src1, csis->regs + CSIS_INT_SRC1);
++
++	return IRQ_HANDLED;
++}
++
++static irqreturn_t exynos990_csis_dma_irq(int irq, void *priv)
++{
++	struct exynos990_csis *csis = priv;
++	unsigned long flags;
++	u32 src;
++
++	if (!csis->dma_cmn_regs)
++		return IRQ_NONE;
++
++	src = readl(csis->dma_cmn_regs + DMA_INT_SRC);
++	if (src)
++		writel(src, csis->dma_cmn_regs + DMA_INT_SRC);
++
++	spin_lock_irqsave(&csis->buf_lock, flags);
++	if (csis->active_buf) {
++		struct exynos990_csis_buf *done = csis->active_buf;
++
++		done->vb.vb2_buf.timestamp = ktime_get_ns();
++		done->vb.sequence = csis->sequence++;
++		vb2_buffer_done(&done->vb.vb2_buf, VB2_BUF_STATE_DONE);
++		csis->active_buf = NULL;
++
++		if (!list_empty(&csis->buf_list)) {
++			struct exynos990_csis_buf *next =
++				list_first_entry(&csis->buf_list,
++						 struct exynos990_csis_buf, list);
++			dma_addr_t addr = vb2_dma_contig_plane_dma_addr(&next->vb.vb2_buf, 0);
++
++			list_del(&next->list);
++			csis->active_buf = next;
++			writel((u32)addr, csis->dma_regs + DMA0_ADDR1);
++		}
++	}
++	spin_unlock_irqrestore(&csis->buf_lock, flags);
+ 
+ 	return IRQ_HANDLED;
+ }
+@@ -104,11 +179,186 @@
+ 	.video = &exynos990_csis_video_ops,
+ };
+ 
++static int exynos990_csis_queue_setup(struct vb2_queue *vq,
++				      unsigned int *nbuffers,
++				      unsigned int *nplanes,
++				      unsigned int sizes[],
++				      struct device *alloc_devs[])
++{
++	struct exynos990_csis *csis = vb2_get_drv_priv(vq);
++
++	if (*nplanes)
++		return sizes[0] < csis->pix.sizeimage ? -EINVAL : 0;
++
++	*nplanes = 1;
++	sizes[0] = csis->pix.sizeimage;
++	return 0;
++}
++
++static void exynos990_csis_buf_queue(struct vb2_buffer *vb)
++{
++	struct exynos990_csis *csis = vb2_get_drv_priv(vb->vb2_queue);
++	struct exynos990_csis_buf *buf =
++		container_of(to_vb2_v4l2_buffer(vb), struct exynos990_csis_buf, vb);
++	unsigned long flags;
++
++	spin_lock_irqsave(&csis->buf_lock, flags);
++	list_add_tail(&buf->list, &csis->buf_list);
++	spin_unlock_irqrestore(&csis->buf_lock, flags);
++}
++
++static int exynos990_csis_start_streaming(struct vb2_queue *vq, unsigned int count)
++{
++	struct exynos990_csis *csis = vb2_get_drv_priv(vq);
++	unsigned long flags;
++	int ret;
++
++	csis->sequence = 0;
++	ret = exynos990_csis_s_stream(&csis->sd, 1);
++	if (ret)
++		goto err_release;
++
++	if (csis->dma_regs && csis->dma_cmn_regs) {
++		spin_lock_irqsave(&csis->buf_lock, flags);
++		if (!list_empty(&csis->buf_list)) {
++			struct exynos990_csis_buf *buf =
++				list_first_entry(&csis->buf_list,
++						 struct exynos990_csis_buf, list);
++			dma_addr_t addr = vb2_dma_contig_plane_dma_addr(&buf->vb.vb2_buf, 0);
++
++			list_del(&buf->list);
++			csis->active_buf = buf;
++			writel((u32)addr, csis->dma_regs + DMA0_ADDR1);
++		}
++		spin_unlock_irqrestore(&csis->buf_lock, flags);
++
++		writel((csis->pix.height << 16) | csis->pix.width,
++		       csis->dma_regs + DMA0_RESOL);
++		writel(0xffffffff, csis->dma_cmn_regs + DMA_INT_MASK);
++		writel(DMA0_CTRL_ENABLE, csis->dma_regs + DMA0_CTRL);
++	}
++
++	return 0;
++
++err_release:
++	spin_lock_irqsave(&csis->buf_lock, flags);
++	while (!list_empty(&csis->buf_list)) {
++		struct exynos990_csis_buf *buf =
++			list_first_entry(&csis->buf_list,
++					 struct exynos990_csis_buf, list);
++		list_del(&buf->list);
++		vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_QUEUED);
++	}
++	spin_unlock_irqrestore(&csis->buf_lock, flags);
++	return ret;
++}
++
++static void exynos990_csis_stop_streaming(struct vb2_queue *vq)
++{
++	struct exynos990_csis *csis = vb2_get_drv_priv(vq);
++	unsigned long flags;
++
++	if (csis->dma_regs && csis->dma_cmn_regs) {
++		writel(0, csis->dma_regs + DMA0_CTRL);
++		writel(0, csis->dma_cmn_regs + DMA_INT_MASK);
++	}
++	exynos990_csis_s_stream(&csis->sd, 0);
++
++	spin_lock_irqsave(&csis->buf_lock, flags);
++	if (csis->active_buf) {
++		vb2_buffer_done(&csis->active_buf->vb.vb2_buf, VB2_BUF_STATE_ERROR);
++		csis->active_buf = NULL;
++	}
++	while (!list_empty(&csis->buf_list)) {
++		struct exynos990_csis_buf *buf =
++			list_first_entry(&csis->buf_list,
++					 struct exynos990_csis_buf, list);
++		list_del(&buf->list);
++		vb2_buffer_done(&buf->vb.vb2_buf, VB2_BUF_STATE_ERROR);
++	}
++	spin_unlock_irqrestore(&csis->buf_lock, flags);
++}
++
++static const struct vb2_ops exynos990_csis_vb2_ops = {
++	.queue_setup		= exynos990_csis_queue_setup,
++	.buf_queue		= exynos990_csis_buf_queue,
++	.start_streaming	= exynos990_csis_start_streaming,
++	.stop_streaming		= exynos990_csis_stop_streaming,
++	.wait_prepare		= vb2_ops_wait_prepare,
++	.wait_finish		= vb2_ops_wait_finish,
++};
++
++static int exynos990_csis_querycap(struct file *file, void *fh,
++				   struct v4l2_capability *cap)
++{
++	strscpy(cap->driver, "exynos990-csis", sizeof(cap->driver));
++	strscpy(cap->card, "Exynos 990 CSIS", sizeof(cap->card));
++	return 0;
++}
++
++static int exynos990_csis_enum_fmt(struct file *file, void *fh,
++				    struct v4l2_fmtdesc *f)
++{
++	if (f->index > 0)
++		return -EINVAL;
++	f->pixelformat = V4L2_PIX_FMT_SRGGB10P;
++	return 0;
++}
++
++static int exynos990_csis_g_fmt(struct file *file, void *fh,
++				 struct v4l2_format *f)
++{
++	struct exynos990_csis *csis = video_drvdata(file);
++
++	f->fmt.pix = csis->pix;
++	return 0;
++}
++
++static int exynos990_csis_s_fmt(struct file *file, void *fh,
++				 struct v4l2_format *f)
++{
++	struct exynos990_csis *csis = video_drvdata(file);
++
++	f->fmt.pix.pixelformat = V4L2_PIX_FMT_SRGGB10P;
++	f->fmt.pix.width = clamp_t(u32, f->fmt.pix.width, 64, 4032);
++	f->fmt.pix.height = clamp_t(u32, f->fmt.pix.height, 64, 3024);
++	f->fmt.pix.bytesperline = ALIGN(f->fmt.pix.width * 10 / 8, 16);
++	f->fmt.pix.sizeimage = f->fmt.pix.bytesperline * f->fmt.pix.height;
++	f->fmt.pix.field = V4L2_FIELD_NONE;
++	f->fmt.pix.colorspace = V4L2_COLORSPACE_RAW;
++	csis->pix = f->fmt.pix;
++	return 0;
++}
++
++static const struct v4l2_ioctl_ops exynos990_csis_ioctl_ops = {
++	.vidioc_querycap		= exynos990_csis_querycap,
++	.vidioc_enum_fmt_vid_cap	= exynos990_csis_enum_fmt,
++	.vidioc_g_fmt_vid_cap		= exynos990_csis_g_fmt,
++	.vidioc_try_fmt_vid_cap		= exynos990_csis_s_fmt,
++	.vidioc_s_fmt_vid_cap		= exynos990_csis_s_fmt,
++	.vidioc_reqbufs			= vb2_ioctl_reqbufs,
++	.vidioc_querybuf		= vb2_ioctl_querybuf,
++	.vidioc_qbuf			= vb2_ioctl_qbuf,
++	.vidioc_dqbuf			= vb2_ioctl_dqbuf,
++	.vidioc_streamon		= vb2_ioctl_streamon,
++	.vidioc_streamoff		= vb2_ioctl_streamoff,
++};
++
++static const struct v4l2_file_operations exynos990_csis_fops = {
++	.owner		= THIS_MODULE,
++	.open		= v4l2_fh_open,
++	.release	= vb2_fop_release,
++	.read		= vb2_fop_read,
++	.poll		= vb2_fop_poll,
++	.mmap		= vb2_fop_mmap,
++	.unlocked_ioctl	= video_ioctl2,
++};
++
+ static int exynos990_csis_probe(struct platform_device *pdev)
+ {
+ 	struct device *dev = &pdev->dev;
+ 	struct exynos990_csis *csis;
+-	int irq, ret;
++	int irq, dma_irq, ret;
+ 	u32 version;
+ 
+ 	csis = devm_kzalloc(dev, sizeof(*csis), GFP_KERNEL);
+@@ -118,10 +368,29 @@
+ 	csis->dev = dev;
+ 	csis->num_lanes = 4;
+ 	of_property_read_u32(dev->of_node, "data-lanes", &csis->num_lanes);
++	mutex_init(&csis->lock);
++	spin_lock_init(&csis->buf_lock);
++	INIT_LIST_HEAD(&csis->buf_list);
++
++	csis->pix.width = 1920;
++	csis->pix.height = 1080;
++	csis->pix.pixelformat = V4L2_PIX_FMT_SRGGB10P;
++	csis->pix.bytesperline = ALIGN(1920 * 10 / 8, 16);
++	csis->pix.sizeimage = csis->pix.bytesperline * csis->pix.height;
++	csis->pix.field = V4L2_FIELD_NONE;
++	csis->pix.colorspace = V4L2_COLORSPACE_RAW;
+ 
+ 	csis->regs = devm_platform_ioremap_resource(pdev, 0);
+ 	if (IS_ERR(csis->regs))
+ 		return PTR_ERR(csis->regs);
++
++	csis->dma_regs = devm_platform_ioremap_resource(pdev, 1);
++	if (IS_ERR(csis->dma_regs))
++		csis->dma_regs = NULL;
++
++	csis->dma_cmn_regs = devm_platform_ioremap_resource(pdev, 2);
++	if (IS_ERR(csis->dma_cmn_regs))
++		csis->dma_cmn_regs = NULL;
+ 
+ 	csis->phy = devm_phy_get(dev, "csis_dphy");
+ 	if (IS_ERR(csis->phy))
+@@ -136,6 +405,23 @@
+ 			       dev_name(dev), csis);
+ 	if (ret)
+ 		return ret;
++
++	dma_irq = platform_get_irq_optional(pdev, 1);
++	if (dma_irq >= 0) {
++		ret = devm_request_irq(dev, dma_irq, exynos990_csis_dma_irq, 0,
++				       "exynos990-csis-dma", csis);
++		if (ret)
++			return ret;
++	}
++
++	strscpy(csis->mdev.model, "Exynos 990 Camera", sizeof(csis->mdev.model));
++	csis->mdev.dev = dev;
++	media_device_init(&csis->mdev);
++	csis->v4l2_dev.mdev = &csis->mdev;
++
++	ret = v4l2_device_register(dev, &csis->v4l2_dev);
++	if (ret)
++		goto err_mdev;
+ 
+ 	v4l2_subdev_init(&csis->sd, &exynos990_csis_subdev_ops);
+ 	csis->sd.owner = THIS_MODULE;
+@@ -147,7 +433,54 @@
+ 	csis->pads[CSIS_PAD_SOURCE].flags = MEDIA_PAD_FL_SOURCE;
+ 	ret = media_entity_pads_init(&csis->sd.entity, CSIS_PADS_NUM, csis->pads);
+ 	if (ret)
+-		return ret;
++		goto err_v4l2;
++
++	ret = v4l2_device_register_subdev(&csis->v4l2_dev, &csis->sd);
++	if (ret)
++		goto err_sd_entity;
++
++	csis->vb2_q.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
++	csis->vb2_q.io_modes = VB2_MMAP | VB2_READ;
++	csis->vb2_q.drv_priv = csis;
++	csis->vb2_q.buf_struct_size = sizeof(struct exynos990_csis_buf);
++	csis->vb2_q.ops = &exynos990_csis_vb2_ops;
++	csis->vb2_q.mem_ops = &vb2_dma_contig_memops;
++	csis->vb2_q.timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
++	csis->vb2_q.lock = &csis->lock;
++	csis->vb2_q.dev = dev;
++	ret = vb2_queue_init(&csis->vb2_q);
++	if (ret)
++		goto err_unreg_sd;
++
++	csis->vdev.fops = &exynos990_csis_fops;
++	csis->vdev.ioctl_ops = &exynos990_csis_ioctl_ops;
++	csis->vdev.release = video_device_release_empty;
++	csis->vdev.v4l2_dev = &csis->v4l2_dev;
++	csis->vdev.queue = &csis->vb2_q;
++	csis->vdev.lock = &csis->lock;
++	csis->vdev.device_caps = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING |
++				 V4L2_CAP_READWRITE;
++	strscpy(csis->vdev.name, "exynos990-csis-wdma", sizeof(csis->vdev.name));
++	video_set_drvdata(&csis->vdev, csis);
++
++	csis->vdev_pad.flags = MEDIA_PAD_FL_SINK;
++	ret = media_entity_pads_init(&csis->vdev.entity, 1, &csis->vdev_pad);
++	if (ret)
++		goto err_unreg_sd;
++
++	ret = video_register_device(&csis->vdev, VFL_TYPE_VIDEO, -1);
++	if (ret)
++		goto err_vdev_entity;
++
++	ret = media_create_pad_link(&csis->sd.entity, CSIS_PAD_SOURCE,
++				    &csis->vdev.entity, 0,
++				    MEDIA_LNK_FL_ENABLED | MEDIA_LNK_FL_IMMUTABLE);
++	if (ret)
++		goto err_unreg_vdev;
++
++	ret = media_device_register(&csis->mdev);
++	if (ret)
++		goto err_unreg_vdev;
+ 
+ 	platform_set_drvdata(pdev, csis);
+ 	pm_runtime_enable(dev);
+@@ -155,27 +488,40 @@
+ 	ret = pm_runtime_resume_and_get(dev);
+ 	if (ret >= 0) {
+ 		version = readl(csis->regs + CSIS_VERSION);
+-		dev_info(dev, "Exynos 990 CSIS version 0x%08x\n", version);
++		dev_info(dev, "Exynos 990 CSIS version 0x%08x (/dev/%s)\n",
++			 version, video_device_node_name(&csis->vdev));
+ 		pm_runtime_put(dev);
+ 	}
+ 
+-	ret = v4l2_async_register_subdev(&csis->sd);
+-	if (ret) {
+-		pm_runtime_disable(dev);
+-		media_entity_cleanup(&csis->sd.entity);
+-		return ret;
+-	}
+-
+-	return 0;
++	return 0;
++
++err_unreg_vdev:
++	video_unregister_device(&csis->vdev);
++err_vdev_entity:
++	media_entity_cleanup(&csis->vdev.entity);
++err_unreg_sd:
++	v4l2_device_unregister_subdev(&csis->sd);
++err_sd_entity:
++	media_entity_cleanup(&csis->sd.entity);
++err_v4l2:
++	v4l2_device_unregister(&csis->v4l2_dev);
++err_mdev:
++	media_device_cleanup(&csis->mdev);
++	return ret;
+ }
+ 
+ static void exynos990_csis_remove(struct platform_device *pdev)
+ {
+ 	struct exynos990_csis *csis = platform_get_drvdata(pdev);
+ 
+-	v4l2_async_unregister_subdev(&csis->sd);
+ 	pm_runtime_disable(&pdev->dev);
++	media_device_unregister(&csis->mdev);
++	video_unregister_device(&csis->vdev);
++	media_entity_cleanup(&csis->vdev.entity);
++	v4l2_device_unregister_subdev(&csis->sd);
+ 	media_entity_cleanup(&csis->sd.entity);
++	v4l2_device_unregister(&csis->v4l2_dev);
++	media_device_cleanup(&csis->mdev);
+ }
+ 
+ static const struct of_device_id exynos990_csis_of_match[] = {
+@@ -194,5 +540,5 @@
+ };
+ module_platform_driver(exynos990_csis_driver);
+ 
+-MODULE_DESCRIPTION("Samsung Exynos 990 MIPI CSI-2 receiver driver");
++MODULE_DESCRIPTION("Samsung Exynos 990 MIPI CSI-2 receiver + WDMA driver");
+ MODULE_LICENSE("GPL");
