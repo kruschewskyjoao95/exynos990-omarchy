@@ -1,0 +1,13 @@
+[Unit]
+Description=r8s power profiles: brightness and CPU pins follow power-profiles-daemon
+After=power-profiles-daemon.service r8s-safe-freq.service
+Wants=power-profiles-daemon.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/r8s-power/r8s-power-profile.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
