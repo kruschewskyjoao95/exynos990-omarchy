@@ -1,0 +1,409 @@
+From: Claude <noreply@anthropic.com>
+Subject: [PATCH] PCI: dwc: exynos990-gen4: HSI2 GEN4_1 root complex for the S5123 modem
+
+New DesignWare glue for the Exynos 990 HSI2 PCIe GEN4_1 channel (pcie_2
+in LineageOS) that links the Shannon S5123 modem, plus its r8s DT node.
+
+The register sequence (PMU PHY isolation release, GEN4 PHY calibration
+for chip_ver 1, soft reset, GEN3 EQ off, PERST, LTSSM) follows LineageOS
+pcie-exynos-rc.c / pcie-exynos9830-rc-cal.c and was first proven from
+userspace. The PMU isolation (0x15860720 bit 0) fences ELBI/DBI too: any
+access before releasing it hard-locks the SoC.
+
+The endpoint only appears after the CP boot loader runs and AP2CP_WAKEUP
+is raised, so probe registers an empty bus and a "relink" attribute
+retrains the link and rescans on demand. No MSI controller yet: a fixup
+sets no_msi on this host's devices.
+
+Tested on r8s kernel #15: after the SPI boot (0140) and AP2CP_WAKEUP,
+relink=1 trains the link (16 GT/s x2) and lspci shows 0001:01:00.0
+[144d:a5a5]; relink=0 removes it. Wi-Fi on domain 0000 is unaffected.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+diff --git a/drivers/pci/controller/dwc/pcie-exynos990-gen4.c b/drivers/pci/controller/dwc/pcie-exynos990-gen4.c
+new file mode 100644
+--- /dev/null
++++ b/drivers/pci/controller/dwc/pcie-exynos990-gen4.c
+@@ -0,0 +1,311 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Exynos 990 HSI2 PCIe GEN4_1 root complex (channel 1, Shannon S5123 modem).
++ *
++ * Register sequence from the LineageOS universal9830 kernel (97369af7):
++ * pcie-exynos-rc.c exynos_pcie_rc_poweron()/establish_link() and
++ * pcie-exynos9830-rc-cal.c exynos_pcie_rc_pcie_phy_config() for chip_ver 1,
++ * first proven from userspace on r8s (packaging/modem/cp-pcie-link.py).
++ *
++ * The endpoint only exists after the CP boot loader runs and AP2CP_WAKEUP is
++ * raised, so probe usually finds an empty link; userspace writes 1 to the
++ * "relink" attribute once the CP is up to train the link and rescan.
++ */
++
++#include <linux/delay.h>
++#include <linux/gpio/consumer.h>
++#include <linux/mfd/syscon.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/pci.h>
++#include <linux/platform_device.h>
++#include <linux/regmap.h>
++
++#include "pcie-designware.h"
++
++/* ELBI */
++#define ELBI_APP_LTSSM_ENABLE		0x054
++#define ELBI_RDLH_LINKUP		0x2c8
++#define  LTSSM_STATE_MASK		0x3f
++#define  LTSSM_L0			0x11	/* Samsung "linkup" encoding */
++#define ELBI_LINKDOWN_RST_CTRL_SEL	0x3a0
++#define ELBI_SOFT_RESET			0x3a4
++#define  SOFT_PWR_RESET			BIT(1)
++#define ELBI_QCH_SEL			0x3a8
++#define ELBI_APP_REQ_EXIT_L1_MODE	0x3bc
++#define ELBI_MSTR_PEND_SEL_NAK		0x474
++#define ELBI_PHY_PORT_RST		0x1400
++#define ELBI_PCS_PHY_INIT_RST		0x1404
++#define ELBI_PHY_CMN_RST		0x1408
++
++/* PMU: pcie_2 pmu-offset; bit 0 releases the PHY isolation that also fences ELBI/DBI. */
++#define PMU_PCIE1_PHY_CONTROL		0x720
++
++/* LineageOS exynos_pcie_rc_pcie_phy_config(), chip_ver == 1 (EVT1 GEN4 PHY), in order. */
++static const u16 gen4_phy_cal[][2] = {
++	{ 0x018, 0x50 }, { 0x048, 0x33 }, { 0x068, 0x01 }, { 0x070, 0x12 }, { 0x078, 0x7f },
++	{ 0x084, 0x0a }, { 0x088, 0x58 }, { 0x08c, 0x00 }, { 0x090, 0x21 }, { 0x104, 0xb6 },
++	{ 0x458, 0x06 }, { 0x550, 0x38 }, { 0x5b0, 0x34 },
++	{ 0x8d0, 0x01 }, { 0x8f4, 0x30 }, { 0x90c, 0x60 }, { 0x9b4, 0x06 }, { 0x9c0, 0x3f },
++	{ 0x9c4, 0xfb }, { 0xa6c, 0x03 }, { 0xb40, 0x06 }, { 0xb44, 0x06 }, { 0xb48, 0x06 },
++	{ 0xb4c, 0x06 }, { 0xb50, 0x00 }, { 0xb54, 0x00 }, { 0xb58, 0x00 }, { 0xb5c, 0x03 },
++	{ 0xc44, 0x16 }, { 0xc48, 0x16 }, { 0xc4c, 0x16 }, { 0xc50, 0x16 }, { 0xc54, 0x0a },
++	{ 0xc58, 0x0a }, { 0xc5c, 0x0a }, { 0xc60, 0x0a }, { 0xc64, 0x08 }, { 0xc68, 0x08 },
++	{ 0xc6c, 0x02 }, { 0xc70, 0x0a }, { 0xca8, 0xe7 }, { 0xcac, 0x00 }, { 0xcb0, 0x0e },
++	{ 0xccc, 0x1c }, { 0xcd4, 0x05 }, { 0xcd8, 0x77 }, { 0xcdc, 0x7a },
++	{ 0xdb4, 0x2f }, { 0x15b4, 0x2f },
++	/* lane 1 */
++	{ 0x10d0, 0x01 }, { 0x10f4, 0x30 }, { 0x110c, 0x60 }, { 0x11b4, 0x06 }, { 0x11c0, 0x3f },
++	{ 0x11c4, 0xfb }, { 0x126c, 0x03 }, { 0x1340, 0x06 }, { 0x1344, 0x06 }, { 0x1348, 0x06 },
++	{ 0x134c, 0x06 }, { 0x1350, 0x00 }, { 0x1354, 0x00 }, { 0x1358, 0x00 }, { 0x135c, 0x03 },
++	{ 0x1444, 0x16 }, { 0x1448, 0x16 }, { 0x144c, 0x16 }, { 0x1450, 0x16 }, { 0x1454, 0x0a },
++	{ 0x1458, 0x0a }, { 0x145c, 0x0a }, { 0x1460, 0x0a }, { 0x1464, 0x08 }, { 0x1468, 0x08 },
++	{ 0x146c, 0x02 }, { 0x1470, 0x0a }, { 0x14a8, 0xe7 }, { 0x14ac, 0x00 }, { 0x14b0, 0x0e },
++	{ 0x14cc, 0x1c }, { 0x14d4, 0x05 }, { 0x14d8, 0x77 }, { 0x14dc, 0x7a },
++	/* "for Gen4 0709" */
++	{ 0xc70, 0x00 }, { 0xca8, 0xe7 }, { 0xcac, 0x00 }, { 0xcb0, 0x0a }, { 0x9b4, 0xc0 },
++	{ 0xa6c, 0x01 }, { 0xba8, 0x01 }, { 0xc08, 0x04 }, { 0xc40, 0x06 }, { 0xb4c, 0x04 },
++	{ 0x1470, 0x00 }, { 0x14a8, 0xe7 }, { 0x14ac, 0x00 }, { 0x14b0, 0x0a }, { 0x11b4, 0xc0 },
++	{ 0x126c, 0x01 }, { 0x13a8, 0x01 }, { 0x1408, 0x04 }, { 0x1440, 0x06 }, { 0x134c, 0x04 },
++	{ 0x450, 0x20 }, { 0x908, 0x05 }, { 0x1108, 0x05 }, { 0x840, 0x10 }, { 0x1040, 0x10 },
++	{ 0x82c, 0x08 }, { 0x102c, 0x08 },
++	{ 0x550, 0x00 },			/* AES disable */
++	{ 0xb9c, 0x01 }, { 0x139c, 0x01 },	/* DFE off */
++};
++
++struct exynos990_gen4 {
++	struct dw_pcie pci;
++	void __iomem *elbi;
++	void __iomem *phy;
++	void __iomem *pcs;
++	struct regmap *pmu;
++	struct gpio_desc *perst;
++	struct mutex lock;		/* serialises relink against itself */
++};
++
++static inline struct exynos990_gen4 *to_gen4(struct dw_pcie *pci)
++{
++	return dev_get_drvdata(pci->dev);
++}
++
++static void gen4_pulse(struct exynos990_gen4 *ep, u32 reg)
++{
++	writel(1, ep->elbi + reg);
++	udelay(10);
++	writel(0, ep->elbi + reg);
++	usleep_range(1000, 1100);
++}
++
++/* Everything up to (not including) LTSSM enable; leaves the DWC core reset. */
++static void gen4_hw_init(struct exynos990_gen4 *ep)
++{
++	struct dw_pcie *pci = &ep->pci;
++	int i;
++	u32 val;
++
++	gpiod_set_value_cansleep(ep->perst, 1);	/* assert (active low) */
++	regmap_update_bits(ep->pmu, PMU_PCIE1_PHY_CONTROL, BIT(0), BIT(0));
++	usleep_range(1000, 1100);
++
++	writel(0x0, ep->phy + 0x400);		/* PHY all power down clear */
++	writel(0x0d, ep->pcs + 0x180);		/* force_pclk_en */
++
++	gen4_pulse(ep, ELBI_PCS_PHY_INIT_RST);
++	gen4_pulse(ep, ELBI_PHY_PORT_RST);
++	gen4_pulse(ep, ELBI_PHY_CMN_RST);
++	writel(0x28, ep->phy + 0xd8);		/* input clock path */
++	for (i = 0; i < ARRAY_SIZE(gen4_phy_cal); i++)
++		writel(gen4_phy_cal[i][1], ep->phy + gen4_phy_cal[i][0]);
++	writel(1, ep->elbi + ELBI_PHY_PORT_RST);
++	usleep_range(1000, 1100);
++	writel(0x700d5, ep->pcs + 0x154);
++	writel(0x700d5, ep->pcs + 0x954);
++	writel(0x300ff, ep->pcs + 0x150);	/* GEN4 PHY: L2 power */
++
++	val = readl(ep->elbi + ELBI_SOFT_RESET);
++	writel(val & ~SOFT_PWR_RESET, ep->elbi + ELBI_SOFT_RESET);
++	udelay(20);
++	writel(val | SOFT_PWR_RESET, ep->elbi + ELBI_SOFT_RESET);
++	usleep_range(1000, 1100);
++	writel(1, ep->elbi + ELBI_PCS_PHY_INIT_RST);
++	usleep_range(2000, 2100);
++	writel(1, ep->elbi + ELBI_PHY_CMN_RST);
++	usleep_range(1000, 1100);
++
++	dw_pcie_writel_dbi(pci, 0x890, 0x12000);	/* GEN3 EQ off */
++
++	gpiod_set_value_cansleep(ep->perst, 0);	/* deassert */
++	usleep_range(18000, 20000);
++
++	writel(readl(ep->elbi + ELBI_APP_REQ_EXIT_L1_MODE) | BIT(0) | BIT(4),
++	       ep->elbi + ELBI_APP_REQ_EXIT_L1_MODE);
++	writel(BIT(1), ep->elbi + ELBI_LINKDOWN_RST_CTRL_SEL);	/* manual */
++	writel(readl(ep->elbi + ELBI_QCH_SEL) & ~GENMASK(11, 0), ep->elbi + ELBI_QCH_SEL);
++	writel(1, ep->elbi + ELBI_MSTR_PEND_SEL_NAK);
++}
++
++static int gen4_host_init(struct dw_pcie_rp *pp)
++{
++	gen4_hw_init(to_gen4(to_dw_pcie_from_pp(pp)));
++	return 0;
++}
++
++/* No MSI controller yet: the CP signals through its own doorbell/MSI path later. */
++static int gen4_msi_init(struct dw_pcie_rp *pp)
++{
++	return 0;
++}
++
++static const struct dw_pcie_host_ops gen4_host_ops = {
++	.init = gen4_host_init,
++	.msi_init = gen4_msi_init,
++};
++
++static int gen4_start_link(struct dw_pcie *pci)
++{
++	struct exynos990_gen4 *ep = to_gen4(pci);
++
++	msleep(50);	/* Samsung waits 48-50 ms before LTSSM enable */
++	writel(1, ep->elbi + ELBI_APP_LTSSM_ENABLE);
++	return 0;
++}
++
++static void gen4_stop_link(struct dw_pcie *pci)
++{
++	writel(0, to_gen4(pci)->elbi + ELBI_APP_LTSSM_ENABLE);
++}
++
++static int gen4_link_up(struct dw_pcie *pci)
++{
++	u32 st = readl(to_gen4(pci)->elbi + ELBI_RDLH_LINKUP) & LTSSM_STATE_MASK;
++
++	return st == LTSSM_L0;
++}
++
++/*
++ * shortcut: no MSI controller on this host yet, so keep the core from trying MSI on
++ * the root port and the modem; upgrade when the CP MSI (cp_msi_rmem) path is ported.
++ */
++static void gen4_quirk_no_msi(struct pci_dev *dev)
++{
++	struct pci_host_bridge *host = pci_find_host_bridge(dev->bus);
++
++	if (host->dev.parent &&
++	    of_device_is_compatible(host->dev.parent->of_node, "samsung,exynos990-pcie-gen4"))
++		dev->no_msi = 1;
++}
++DECLARE_PCI_FIXUP_EARLY(PCI_VENDOR_ID_SAMSUNG, PCI_ANY_ID, gen4_quirk_no_msi);
++
++static const struct dw_pcie_ops gen4_dw_ops = {
++	.start_link = gen4_start_link,
++	.stop_link = gen4_stop_link,
++	.link_up = gen4_link_up,
++};
++
++static ssize_t relink_store(struct device *dev, struct device_attribute *attr,
++			    const char *buf, size_t count)
++{
++	struct exynos990_gen4 *ep = dev_get_drvdata(dev);
++	struct dw_pcie_rp *pp = &ep->pci.pp;
++	struct pci_bus *bus = pp->bridge->bus;
++	struct pci_dev *root, *child, *tmp;
++	bool on;
++	int ret;
++
++	ret = kstrtobool(buf, &on);
++	if (ret)
++		return ret;
++
++	mutex_lock(&ep->lock);
++	pci_lock_rescan_remove();
++	/* Drop whatever sits behind the root port, keep its config across the core reset. */
++	list_for_each_entry(root, &bus->devices, bus_list) {
++		if (root->subordinate)
++			list_for_each_entry_safe_reverse(child, tmp, &root->subordinate->devices,
++							 bus_list)
++				pci_stop_and_remove_bus_device(child);
++		pci_save_state(root);
++	}
++
++	gen4_stop_link(&ep->pci);
++	if (on) {
++		gen4_hw_init(ep);
++		ret = dw_pcie_setup_rc(pp);
++		list_for_each_entry(root, &bus->devices, bus_list)
++			pci_restore_state(root);
++		if (!ret) {
++			gen4_start_link(&ep->pci);
++			ret = dw_pcie_wait_for_link(&ep->pci);
++		}
++		if (!ret)
++			pci_rescan_bus(bus);
++	} else {
++		gpiod_set_value_cansleep(ep->perst, 1);
++	}
++	pci_unlock_rescan_remove();
++	mutex_unlock(&ep->lock);
++
++	dev_info(dev, "relink %s: %d (LTSSM %#x)\n", on ? "on" : "off", ret,
++		 readl(ep->elbi + ELBI_RDLH_LINKUP) & LTSSM_STATE_MASK);
++	return ret ? ret : count;
++}
++static DEVICE_ATTR_WO(relink);
++
++static int exynos990_gen4_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct exynos990_gen4 *ep;
++	int ret;
++
++	ep = devm_kzalloc(dev, sizeof(*ep), GFP_KERNEL);
++	if (!ep)
++		return -ENOMEM;
++	mutex_init(&ep->lock);
++	ep->pci.dev = dev;
++	ep->pci.ops = &gen4_dw_ops;
++	ep->pci.pp.ops = &gen4_host_ops;
++
++	ep->elbi = devm_platform_ioremap_resource_byname(pdev, "elbi");
++	if (IS_ERR(ep->elbi))
++		return PTR_ERR(ep->elbi);
++	ep->phy = devm_platform_ioremap_resource_byname(pdev, "phy");
++	if (IS_ERR(ep->phy))
++		return PTR_ERR(ep->phy);
++	ep->pcs = devm_platform_ioremap_resource_byname(pdev, "pcs");
++	if (IS_ERR(ep->pcs))
++		return PTR_ERR(ep->pcs);
++	ep->pmu = syscon_regmap_lookup_by_phandle(dev->of_node, "samsung,pmu");
++	if (IS_ERR(ep->pmu))
++		return dev_err_probe(dev, PTR_ERR(ep->pmu), "no samsung,pmu\n");
++	ep->perst = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
++	if (IS_ERR(ep->perst))
++		return dev_err_probe(dev, PTR_ERR(ep->perst), "no reset-gpios\n");
++
++	platform_set_drvdata(pdev, ep);
++
++	/* Without the CP booted the link never trains; the host still registers. */
++	ret = dw_pcie_host_init(&ep->pci.pp);
++	if (ret)
++		return dev_err_probe(dev, ret, "host init failed\n");
++
++	return device_create_file(dev, &dev_attr_relink);
++}
++
++static const struct of_device_id exynos990_gen4_of_match[] = {
++	{ .compatible = "samsung,exynos990-pcie-gen4" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, exynos990_gen4_of_match);
++
++static struct platform_driver exynos990_gen4_driver = {
++	.probe = exynos990_gen4_probe,
++	.driver = {
++		.name = "exynos990-pcie-gen4",
++		.of_match_table = exynos990_gen4_of_match,
++		.suppress_bind_attrs = true,
++	},
++};
++module_platform_driver(exynos990_gen4_driver);
++
++MODULE_DESCRIPTION("Exynos 990 HSI2 PCIe GEN4_1 root complex");
++MODULE_LICENSE("GPL");
+diff --git a/drivers/pci/controller/dwc/Kconfig b/drivers/pci/controller/dwc/Kconfig
+--- a/drivers/pci/controller/dwc/Kconfig
++++ b/drivers/pci/controller/dwc/Kconfig
+@@ -352,6 +352,17 @@
+ 	  hardware and therefore the driver re-uses the DesignWare core
+ 	  functions to implement the driver.
+ 
++config PCIE_EXYNOS990_GEN4
++	tristate "Samsung Exynos 990 HSI2 PCIe GEN4 controller (modem link)"
++	depends on ARCH_EXYNOS || COMPILE_TEST
++	depends on PCI_MSI
++	select PCIE_DW_HOST
++	help
++	  Root complex for the Exynos 990 HSI2 PCIe GEN4_1 channel, which
++	  connects the Shannon S5123 modem. The link only trains after the
++	  modem boot loader is running; trigger it with the "relink" sysfs
++	  attribute.
++
+ config PCIE_FU740
+ 	bool "SiFive FU740 PCIe controller"
+ 	depends on PCI_MSI
+diff --git a/drivers/pci/controller/dwc/Makefile b/drivers/pci/controller/dwc/Makefile
+--- a/drivers/pci/controller/dwc/Makefile
++++ b/drivers/pci/controller/dwc/Makefile
+@@ -6,6 +6,7 @@
+ obj-$(CONFIG_PCIE_BT1) += pcie-bt1.o
+ obj-$(CONFIG_PCI_DRA7XX) += pci-dra7xx.o
+ obj-$(CONFIG_PCI_EXYNOS) += pci-exynos.o
++obj-$(CONFIG_PCIE_EXYNOS990_GEN4) += pcie-exynos990-gen4.o
+ obj-$(CONFIG_PCIE_FU740) += pcie-fu740.o
+ obj-$(CONFIG_PCI_IMX6) += pci-imx6.o
+ obj-$(CONFIG_PCIE_SPEAR13XX) += pcie-spear13xx.o
+diff --git a/arch/arm64/boot/dts/exynos/exynos990-r8s.dts b/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
+--- a/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
++++ b/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
+@@ -686,6 +686,34 @@
+ 		memory-region = <&wifi_region>;
+ 		status = "okay";
+ 	};
++
++	/*
++	 * HSI2 PCIe GEN4_1 (channel 1) to the Shannon S5123 modem: LineageOS
++	 * exynos9830-pcie.dtsi pcie_2 + exynos990-r8s_eur_open_05 (chip-ver 1).
++	 * The endpoint appears only after the CP boot loader runs; see the
++	 * driver's "relink" attribute and packaging/modem/.
++	 */
++	pcie_modem: pcie@13d20000 {
++		compatible = "samsung,exynos990-pcie-gen4";
++		reg = <0x0 0x13d20000 0x0 0x2000>,
++		      <0x0 0x13d50000 0x0 0x2000>,
++		      <0x0 0x13800000 0x0 0x301000>,
++		      <0x0 0x13d40000 0x0 0x1000>,
++		      <0x0 0x14ffe000 0x0 0x2000>;
++		reg-names = "elbi", "phy", "dbi", "pcs", "config";
++		#address-cells = <3>;
++		#size-cells = <2>;
++		device_type = "pci";
++		linux,pci-domain = <1>;
++		bus-range = <0x00 0xff>;
++		ranges = <0x82000000 0x0 0x14d00000 0x0 0x14000000 0x0 0x00ff0000>;
++		num-lanes = <2>;
++		reset-gpios = <&gpf3 1 GPIO_ACTIVE_LOW>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&pcie2_clkreq &pcie2_perst>;
++		samsung,pmu = <&pmu_system_controller>;
++		status = "okay";
++	};
+ };
+ 
+ /*

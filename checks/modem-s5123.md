@@ -78,6 +78,26 @@ Para ler o barramento 1: barramento secundário do RC = 1 (DBI `0x18 = 0x0001010
 
 Falta levar isso para o kernel: um caminho GEN4 no `pci-exynos.c`, ou driver próprio, mais o nó `pcie@13D20000` com a ordem PMU → AP2CP_WAKEUP → PHY.
 
+## Marco 4a, passo 1: driver de kernel do PCIe GEN4_1 (feito; kernel #15, 0141 `fbcdb5ad…`)
+
+- **Driver novo `drivers/pci/controller/dwc/pcie-exynos990-gen4.c`** (glue DesignWare, `CONFIG_PCIE_EXYNOS990_GEN4=y`), mais o nó `pcie_modem: pcie@13d20000` no `exynos990-r8s.dts`: domínio PCI 1, 2 lanes, PERST gpf3-1, `pcie2_clkreq`/`pcie2_perst`, PMU por `samsung,pmu`.
+- **No boot:** com o CP desligado, aparece "Phy link never came up", e o host registra o barramento `0001` só com o root port `144d:a5a5`. Sem WARN, porque um fixup põe `no_msi` nos dispositivos deste host: ainda não há controlador MSI.
+- **Sob demanda:** `cp-spiboot.sh` (com `KEEP_CP_ON=1`), depois `AP2CP_WAKEUP=1` e `echo 1 > /sys/bus/platform/devices/13d20000.pcie/relink`. O link treina e o `lspci` mostra:
+
+```
+0001:00:00.0 PCI bridge [0604]: Samsung Electronics Co Ltd Device [144d:a5a5] (rev 01)
+0001:01:00.0 Non-VGA unclassified device [0000]: Samsung Electronics Co Ltd Device [144d:a5a5] (rev 01)
+	Region 0: Memory at <ignored> (64-bit, non-prefetchable) [size=1M]
+	LnkSta: Speed 16GT/s, Width x2
+```
+
+- `echo 0 > relink` remove o endpoint. O Wi-Fi (domínio 0000) não foi afetado.
+- **Pendências:**
+  - BAR0 sai como `<ignored>`, não atribuído pelo rescan. O doorbell (`pci_db_addr = 0x14D60000`, endereço de barramento) depende dele.
+  - O link negocia Gen4; o protótipo ficava em Gen1.
+  - Falta MSI.
+- Os scripts no aparelho ficam em `/usr/local/lib/r8s-modem/`, porque o `/tmp` é tmpfs.
+
 ## Próximos marcos
 
 4. **MAIN e NV pelo PCIe/shmem:** carregar o firmware principal e a calibração NV do EFS, depois o handshake SIPC5.
