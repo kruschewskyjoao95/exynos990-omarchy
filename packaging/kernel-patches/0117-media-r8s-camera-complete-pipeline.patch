@@ -90,7 +90,7 @@ diff --git a/drivers/media/i2c/s5k2ld.c b/drivers/media/i2c/s5k2ld.c
 index 000000000..000000000 100644
 --- a/drivers/media/i2c/s5k2ld.c
 +++ b/drivers/media/i2c/s5k2ld.c
-@@ -3,15 +3,21 @@
+@@ -3,15 +3,26 @@
   * Samsung S5K2LD MIPI CSI-2 image sensor V4L2 driver
   */
  
@@ -117,7 +117,7 @@ index 000000000..000000000 100644
  #define S5K2LD_REG_STREAM	0x0100
  
  struct s5k2ld {
-@@ -19,6 +25,12 @@
+@@ -19,6 +30,12 @@
  	struct v4l2_subdev sd;
  	struct media_pad pad;
  	struct v4l2_mbus_framefmt fmt;
@@ -130,7 +130,7 @@ index 000000000..000000000 100644
  };
  
  static inline struct s5k2ld *to_s5k2ld(struct v4l2_subdev *sd)
-@@ -42,6 +54,14 @@
+@@ -42,6 +59,14 @@
  	return 0;
  }
  
@@ -145,7 +145,7 @@ index 000000000..000000000 100644
  static int s5k2ld_write_reg16(struct i2c_client *client, u16 reg, u16 val)
  {
  	u8 buf[4] = { reg >> 8, reg & 0xff, val >> 8, val & 0xff };
-@@ -50,12 +70,134 @@
+@@ -50,12 +75,135 @@
  	return ret == 4 ? 0 : (ret < 0 ? ret : -EIO);
  }
  
@@ -284,7 +284,7 @@ index 000000000..000000000 100644
  }
  
  static int s5k2ld_get_fmt(struct v4l2_subdev *sd,
-@@ -86,7 +222,7 @@
+@@ -86,7 +234,7 @@
  {
  	struct device *dev = &client->dev;
  	struct s5k2ld *sensor;
@@ -293,7 +293,7 @@ index 000000000..000000000 100644
  	int ret;
  
  	sensor = devm_kzalloc(dev, sizeof(*sensor), GFP_KERNEL);
-@@ -94,41 +230,74 @@
+@@ -94,41 +242,74 @@
  		return -ENOMEM;
  
  	sensor->client = client;
