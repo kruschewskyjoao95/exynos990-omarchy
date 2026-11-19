@@ -106,3 +106,12 @@ Abortar (parar a carga) acima de 80 °C.
 - O `get_rate(10)` devolve 0: **não serve para ler a frequência real** (como o plano previa). Os 800 MHz são só o valor registrado pelo kernel.
 - `panfrost`: `clock rate = 800000000`, `r8s_devfreq = N`.
 - Imagem para a etapa 2: `out/usb3/boot/r8s-ufs-gpu.img` (SHA-256 `f49c38986a5ae3d5…`): mesmo kernel do teste de USB 3, DTB **sem** o USB 3 (`maximum-speed = high-speed`) e `bootargs` com `r8s_gpu_dvfs=1`. Só RAM (`fastboot boot`).
+
+## Resultado da etapa 2, frequência fixa (19/11/2026, kernel de teste #8 em RAM com `r8s_gpu_dvfs=1`, observado)
+
+- `echo <kHz> > /sys/kernel/debug/exynos990-g3d/set_khz` foi aceito em todos os níveis da tabela (156, 260, 377, 455, 572, 702, 800 MHz), sem travar e sem aviso no `dmesg`. `status` mostra `last_set_khz` igual ao pedido; `acpm_khz` segue `0 (not a table level)` (o `get_rate(10)` não serve para ler).
+- Carga: `glmark2-es2-wayland --off-screen -s 800x600` (shading, build e texture, 4 s cada), com o Mesa `mesa-g77` (`GL_RENDERER: Mali-G77 MC11 (Panfrost)`). **Sem o ambiente do Mesa especial ele usa `llvmpipe` (CPU)** e não mede a GPU. Pacote `glmark2` 2023.01-2 do espelho aarch64 do Omarchy.
+- Pontuações: 156 MHz 1040; 260 MHz 1578; 377 MHz 1512 e 1798 (duas medições); 455 MHz 1749; 572 MHz 2079; 702 MHz 1631; 800 MHz 1606. O ruído é de ~15%.
+- Leitura: a 156 MHz a queda é clara (~58% do de 377 MHz). De 260 MHz para cima o teste é limitado pela CPU (que esquenta e é freada: `gpu-thermal` 56 -> 68 °C durante a varredura), então ele não separa os níveis altos. O controle altera a frequência real da GPU.
+- Limite do método: com a frequência fixa por escrita, a GPU precisa estar ligada. O clk devolve `-EAGAIN` com `pd_g3d` desligado, e a Samsung exige ≤377 MHz antes de desligar a G3D (`opp-suspend`). Um perfil que escreva `set_khz` não cobre o ciclo de energia; o devfreq do Panfrost (etapa 3) cobre.
+- Imagem da etapa 3: `out/usb3/boot/r8s-ufs-gpu3.img` (SHA-256 `f00089a44378e105…`): como a da etapa 2 mais `panfrost.r8s_devfreq=1`. Só RAM.
