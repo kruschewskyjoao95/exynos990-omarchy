@@ -55,3 +55,10 @@ Testado no aparelho em 19/11/2026, kernel #18, sem flash. Origem: pedido do prop
 - O serviço escreve os limites do devfreq do Panfrost (`/sys/class/devfreq/18500000.gpu/{min_freq,max_freq}`): Economia 156..156 MHz, Balanceado 156..455 MHz, Desempenho 800..800 MHz. A ordem é piso mínimo, teto e piso final, para a faixa nunca ficar vazia.
 - Medido sob carga (`glmark2` com o Mesa `mesa-g77`, `Mali-G77 MC11 (Panfrost)`): Economia 156 MHz; Balanceado 455 MHz (volta a 377 MHz ocioso, o `opp-suspend` da Samsung); Desempenho 800 MHz. Zero erros ACPM. As pontuações do `glmark2` (1036 a 1325) não distinguem os níveis: o teste é limitado pela CPU a partir de ~260 MHz.
 - **Só existe com as opções de boot** `r8s_gpu_dvfs=1` (linha de comando, no `bootargs` do DTB) e `panfrost.r8s_devfreq=1`, que o kernel instalado (#17) não tem. Neste kernel o serviço registra "no devfreq on this kernel, left alone" e segue. Para valer sempre, é preciso gravar uma imagem de boot com essas opções (escrita no telefone: só com ordem do proprietário, com backup).
+
+## Extremos da CPU validados (19/11/2026, kernel de teste em RAM, celular a 61-63 °C e sem freio térmico, observado)
+
+- **Sem carga**: o `scaling_cur_freq` de cada grupo é o valor do perfil: Economia 442 / 507 / 546 MHz, Balanceado 1157 / 1586 / 1274 MHz, Desempenho 2002 / 2600 / 2002 MHz. Sem freio térmico (`cooling` 0/0/0).
+- **Desempenho com carga em 8 núcleos** (`taskset` + laço): em 2 s a zona dos núcleos grandes foi a **85 °C** e o freio térmico entrou (`cooling` 4/8/4, CPUs 1586 / 1794 / 1586 MHz). O teste foi parado ali (limite de 74 °C). **0 erros ACPM/RCU, 8 núcleos online, sem travar.** O grupo M5 (cpu6/7) a 2002 MHz, o ponto que travou em setembro, passou pelas transições do freio sem travar neste ensaio curto.
+- **Recuperação**: 62-65 °C em 5 s depois de tirar a carga; freio solto (0/0/0); perfil devolvido a Balanceado.
+- **Leitura**: o máximo de CPU e GPU (Desempenho) só se sustenta em rajadas curtas; sob carga contínua o freio térmico assume em segundos. O ensaio foi de 2 s; não prova ausência de travamento em uso prolongado.
