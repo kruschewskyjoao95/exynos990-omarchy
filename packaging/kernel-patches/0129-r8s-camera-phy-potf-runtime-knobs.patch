@@ -1,0 +1,155 @@
+From: Claude <noreply@anthropic.com>
+Subject: [PATCH] media: r8s-camera: runtime knobs for C-PHY reset order, settle and POTF; fix DMA0_FRO_FRM
+
+Bring-up aid so link experiments do not need a reflash per hypothesis:
+- phy_exynos990_mipi_csi.lineage_reset: hold the DCPHY reset while
+  programming and release it last (LineageOS __set_phy_cfg order).
+- phy_exynos990_mipi_csi.settle: SD_TIME_CON0 settle (default 7, the
+  7nm C-PHY table value at 2964 Msps).
+- exynos990_csis.potf: POTF_ONLY + parallel WDMA input (Samsung potf=true).
+  On r8s with no 3AA consumer, potf=0 (OTF) stalls after the first FS.
+- DMA0_FRO_FRM is 0x00B8 in is-hw-csi-v5_3.h, not 0x00BC.
+- Print the CSIS/DMA diagnostics on every stop, with potf and frames done.
+
+Defaults keep the 0128 behaviour.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+diff --git a/drivers/phy/samsung/phy-exynos990-mipi-csi.c b/drivers/phy/samsung/phy-exynos990-mipi-csi.c
+--- a/drivers/phy/samsung/phy-exynos990-mipi-csi.c
++++ b/drivers/phy/samsung/phy-exynos990-mipi-csi.c
+@@ -15,6 +15,15 @@
+ 
+ #define EXYNOS_MIPI_PHY_ISO_BYPASS	BIT(0)
+ 
++/* Bring-up knobs, read at every power-on so they can be swept without a reflash. */
++static bool lineage_reset;
++module_param(lineage_reset, bool, 0644);
++MODULE_PARM_DESC(lineage_reset, "Hold PHY reset while programming, release last (LineageOS __set_phy_cfg order)");
++
++static uint settle = 7;
++module_param(settle, uint, 0644);
++MODULE_PARM_DESC(settle, "C-PHY SD_TIME_CON0 settle count (7nm table: 7 at 2964 Msps)");
++
+ struct exynos990_mipi_csi_phy {
+ 	struct device *dev;
+ 	void __iomem *regs;
+@@ -51,12 +60,16 @@
+ 		if (ret)
+ 			goto err_isolate;
+ 		usleep_range(10, 20);
+-		ret = regmap_update_bits(state->reg_reset, 0, BIT(state->reset_bit),
+-					 BIT(state->reset_bit));
+-		if (ret)
+-			goto err_isolate;
+-		usleep_range(10, 20);
++		if (!lineage_reset) {
++			ret = regmap_update_bits(state->reg_reset, 0, BIT(state->reset_bit),
++						 BIT(state->reset_bit));
++			if (ret)
++				goto err_isolate;
++			usleep_range(10, 20);
++		}
+ 	}
++	dev_info(state->dev, "C-PHY power on: settle=%u reset=%s\n", settle,
++		 lineage_reset ? "held-while-programming" : "released-first");
+ 
+ 	for (int i = 0; i < 3; i++)
+ 		writel(0, state->regs + 0x100 + i * 0x100);
+@@ -80,7 +93,7 @@
+ 		writel(0x200, d + 0x1c);
+ 		writel(0x638, d + 0x20);
+ 		writel(0x40, d + 0x24);
+-		writel((readl(d + 0x30) & ~GENMASK(8, 0)) | 7, d + 0x30);
++		writel((readl(d + 0x30) & ~GENMASK(8, 0)) | (settle & 0xff), d + 0x30);
+ 		writel(0x32, d + 0x34);
+ 		writel(readl(d + 0x40) & ~BIT(0), d + 0x40);
+ 		writel(0x1503, d + 0x64);
+@@ -89,6 +102,14 @@
+ 	}
+ 	usleep_range(200, 250);
+ 
++	if (state->has_reset && lineage_reset) {
++		ret = regmap_update_bits(state->reg_reset, 0, BIT(state->reset_bit),
++					 BIT(state->reset_bit));
++		if (ret)
++			goto err_isolate;
++		usleep_range(200, 250);
++	}
++
+ 	return 0;
+ 
+ err_isolate:
+diff --git a/drivers/media/platform/samsung/exynos990-csis.c b/drivers/media/platform/samsung/exynos990-csis.c
+--- a/drivers/media/platform/samsung/exynos990-csis.c
++++ b/drivers/media/platform/samsung/exynos990-csis.c
+@@ -53,7 +53,7 @@
+ #define DMA0_ADDR1			0x0010
+ #define DMA0_RESOL			0x00a4
+ #define DMA0_FCNTSEQ			0x00b0
+-#define DMA0_FRO_FRM			0x00bc
++#define DMA0_FRO_FRM			0x00b8
+ #define DMA0_CTRL_ENABLE		BIT(0)
+ #define DMA0_CTRL_UPDT_PTR_EN		BIT(1)
+ 
+@@ -74,6 +74,10 @@
+ module_param(pattern, bool, 0644);
+ MODULE_PARM_DESC(pattern, "Use CSISX4 WDMA internal test pattern generator");
+ 
++static bool potf;
++module_param(potf, bool, 0644);
++MODULE_PARM_DESC(potf, "POTF_ONLY + parallel WDMA input (Samsung potf=true) instead of OTF");
++
+ #define CSIS_PAD_SINK			0
+ #define CSIS_PAD_SOURCE			1
+ #define CSIS_PADS_NUM			2
+@@ -226,13 +230,16 @@
+ 			goto err_phy;
+ 		writel(BIT(31), csis->regs + CSIS_LRTE_CONFIG);
+ 		writel(BIT(23), csis->regs + CSIS_DBG_OPTION_SUITE);
+-		writel((2 << 12) | (0x2B << 2), csis->regs + CSIS_ISP_CONFIG_CH0);
++		/* PIXEL_MODE quad (bits 13:12), POTF_ONLY bit 11, DATAFORMAT bits 7:2. */
++		writel((2 << 12) | (potf ? BIT(11) : 0) | (0x2B << 2),
++		       csis->regs + CSIS_ISP_CONFIG_CH0);
+ 		writel((csis->pix.height << 16) | csis->pix.width,
+ 		       csis->regs + CSIS_ISP_RESOL_CH0);
+ 		/* The mode also sends VC1 PDAF and VC0 embedded data. */
+-		writel(BIT(16) | (2 << 12) | (0x2b << 2), csis->regs + 0x0050);
++		writel(BIT(16) | (2 << 12) | (potf ? BIT(11) : 0) | (0x2b << 2),
++		       csis->regs + 0x0050);
+ 		writel((378 << 16) | 2016, csis->regs + 0x0054);
+-		writel((2 << 12) | (0x12 << 2), csis->regs + 0x0070);
++		writel((2 << 12) | (potf ? BIT(11) : 0) | (0x12 << 2), csis->regs + 0x0070);
+ 		writel((2 << 16) | 2016, csis->regs + 0x0074);
+ 		writel(0xf, csis->regs + CSIS_UPD_SDW);
+ 		val = readl(csis->regs + CSIS_CMN_CTRL) | CSIS_CMN_CTRL_PHY_SEL_CPHY |
+@@ -252,15 +259,15 @@
+ 		writel(0, csis->regs + 0x0630); /* line end mask */
+ 
+ 	} else {
+-		if (!csis->sequence)
+-			dev_info(csis->dev, "FS=%#x FE=%#x line=%#x lost=%#x/%#x sizeerr=%#x/%#x DMA active=%#x fmt=%#x\n",
++		/* Printed on every stop so parameter sweeps can be compared run by run. */
++		dev_info(csis->dev, "run: potf=%d frames_done=%u\n", potf, csis->sequence);
++		dev_info(csis->dev, "FS=%#x FE=%#x line=%#x lost=%#x/%#x sizeerr=%#x/%#x DMA active=%#x fmt=%#x\n",
+ 				 readl(csis->regs + 0x0024), readl(csis->regs + 0x002c),
+ 				 readl(csis->regs + 0x0634), readl(csis->regs + 0x0614),
+ 				 readl(csis->regs + 0x061c), readl(csis->regs + 0x0624),
+ 				 readl(csis->regs + 0x062c), readl(csis->dma_regs + 0x0090),
+ 				 readl(csis->dma_regs + 0x0098));
+-		if (csis->sequence == 0)
+-			dev_info(csis->dev, "csis diag: vc0_frames=%u int0=0x%08x int1=0x%08x phy_st=0x%08x dma_int=0x%08x dma_err=0x%08x\n",
++		dev_info(csis->dev, "csis diag: vc0_frames=%u int0=0x%08x int1=0x%08x phy_st=0x%08x dma_int=0x%08x dma_err=0x%08x\n",
+ 				 readl(csis->regs + 0x0500),
+ 				 readl(csis->regs + CSIS_INT_SRC0),
+ 				 readl(csis->regs + CSIS_INT_SRC1),
+@@ -386,7 +393,8 @@
+ 	writel(0x4, csis->dma_regs + DMA0_FMT); /* U10BIT_PACK */
+ 	writel(csis->pix.width, csis->dma_regs + DMA0_RESOL);
+ 	writel(0, csis->dma_cmn_regs + 0x001c); /* RAW10 OTF_FORMAT */
+-	writel(0, csis->dma_cmn_regs + DMA_DATA_CTRL); /* OTF input (potf=false) */
++	/* DMA_INPUT_PATH_CH0: 0 = OTF, 1 = parallel (Samsung csi_hw_s_config_dma_cmn). */
++	writel(potf && !pattern ? 1 : 0, csis->dma_cmn_regs + DMA_DATA_CTRL);
+ 	writel(readl(csis->dma_cmn_regs + DMA_INT_SRC), csis->dma_cmn_regs + DMA_INT_SRC);
+ 	spin_lock_irqsave(&csis->buf_lock, flags);
+ 	csis->dma_running = true;
