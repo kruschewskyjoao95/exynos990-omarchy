@@ -57,6 +57,7 @@ while [ $i -lt 50 ]; do        # 5 s, like check_cp_status (200 x 20 ms = 4 s)
 	last=$cur; sleep 0.1; i=$((i + 1))
 done
 dmesg | grep -iE "spi|pcie" | tail -5
+[ "${KEEP_CP_ON:-0}" = 1 ] && { echo "CP mantido ligado (KEEP_CP_ON=1)"; exit 0; }
 out gpiochip30 0=0 10ms
 out gpiochip41 0=0 10ms
 out gpiochip46 0=0

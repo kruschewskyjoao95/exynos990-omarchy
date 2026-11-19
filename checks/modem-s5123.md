@@ -57,6 +57,28 @@ O `ps_hold` acompanha a energia do CP, então **o S5123 é alimentado e reage ao
 
 O bootloader do CP roda com o firmware enviado pelo Arch, e o `cp2ap_wakeup=1` é a condição de `check_cp_status()` para `register_pcie()`.
 
+## Marco 3: PCIe canal 1 (bloqueado)
+
+O controlador do modem é o **GEN4_1 do HSI2** (`pcie@13D20000`), um IP diferente do GEN2/HSI1 do Wi-Fi, que é o que o `pci-exynos.c` do port suporta. O protótipo `packaging/modem/cp-pcie-link.py` reproduz pelo `/dev/mem` a sequência `exynos_pcie_rc_poweron()`/`establish_link()` e a calibração `chip_ver=1` de `pcie-exynos9830-rc-cal.c` (cerca de 140 escritas literais).
+
+**Resultado: o primeiro acesso ao ELBI (`0x13D202C8`) trava o SoC.** É um travamento seco, sem panic e sem pstore, e o watchdog reinicia o aparelho. Isso foi reproduzido numa sondagem só de leitura com o CP desligado. PMU `0x720` (=0) e SYSREG_HSI2 `+0x0`/`+0x800` (=0/`0x81084`) leem normalmente.
+
+Verificado ativo, ou seja, não é clock:
+
+| Bloco | Estado |
+|---|---|
+| CMU_TOP | `hsi2_bus` 200 MHz e `hsi2_pcie` 800 MHz, hw enable `Y` |
+| CMU_HSI2, `MUX_USER` | `BUS_USER`/`PCIE_USER` = `0x10` (CMU selecionado) |
+| CMU_HSI2, gates do GEN4_1 | `0x2018`–`0x2030` e `0x204c` = `0x200000` |
+| CMU_HSI2, QCH | `0x3028`–`0x3038` = `0x3f0002` |
+| Barramento e reset-sync | LHM/LHS/XIU/RSTNSYNC/SYSREG/D_TZPC = `0x200000` |
+
+No LineageOS o probe do `exynos-pcie-rc` acessa o ELBI (`enable_interrupts(pp, 0)`) antes de qualquer ajuste de PMU e sem clocks próprios (`pcie-clk-num = <0>`). Então lá o bloco já está acessível. Hipóteses abertas, não testadas:
+- reset ou isolamento de energia do sub-bloco PCIe do HSI2 deixado pelo caminho de boot (S-Boot → lk3rd → uniLoader);
+- proteção TrustZone (`D_TZPC_HSI2`) marcando o GEN4_1 como seguro.
+
+Para o marco 4, há chamadas SMC de verificação de boot do CP em `cpif/link_device.c:2280-2293` (`exynos_smc(SMC_ID, msr.mode…)`, `MODE_CP_CHECK_CONTINUE`). A EL3 provavelmente valida o firmware MAIN antes de liberar o CP.
+
 ## Próximos marcos
 
 3. **PCIe1** (`pcie@13D20000`, PERST, S2MPU): o endpoint Shannon enumera no `lspci`.
