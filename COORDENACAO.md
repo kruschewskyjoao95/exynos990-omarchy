@@ -30,6 +30,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 8. [claude] Revisar logs/artefatos gerados em M2–M4 no aparelho real antes de avançar para M5.
 
 ## Feito, aguardando revisão
+- [claude] commit `51ec758`: após `INIT_END` o S5123 entra em IPC normal e envia 10 quadros IPC Samsung no FMT (ch 235: AST_POWERON, PWR_UP NOTI, SEC/GPRS). Próximo: daemon IPC nativo (SIM/rede/PDP).
 - [claude] commit `107aaf6`: S5123 responde `PHONE_START` (`0xc8`) ao `PIF_INIT_DONE` quando o doorbell leva `+0x10000` (`DOORBELL_INT_ADD`, cpif legacy.h). Testado 2× no #18, sem flash; boot via CUSE com o mesmo valor conferido (`cbd` rc 0). Evidência em `research/modem-cbd-boot.md`. Próximo: `init_legacy_link`/`INIT_END` e transporte SBD para RIL/RFS.
 - [codex] `2811745`: reproduzido `INIT_START` (`0xc1`) no S5123 #18 após o firmware. Dois ensaios de `PIF_INIT_DONE` com descritores experimentais não chegaram a `PHONE_START`. Evidência em `research/modem-cbd-boot.md`.
 
