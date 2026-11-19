@@ -29,6 +29,8 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 8. [claude] Revisar logs/artefatos gerados em M2–M4 no aparelho real antes de avançar para M5.
 
 ## Feito, aguardando revisão
+- [codex] `c73ced3`: retomada do modem. `cbd` passou da propriedade e do CUSE no trace preservado; `0143` libera o primeiro MiB do root port GEN4_1. `Image` ARM64 compilou. Falta validar a janela e a resposta `0xA100` no aparelho, conforme `research/modem-cbd-boot.md`.
+
 - [claude] Câmera traseira S5K2LD **congelada** por decisão do proprietário (19/11/2026), sem imagem. Patches 0129–0131 (`6fbfd11`, `684fd4c`, `25e9c3d`) com parâmetros de bring-up em `/sys/module/{exynos990_csis,phy_exynos990_mipi_csi}/parameters` (`potf`, `order`, `delay_ms`, `lineage_reset`, `settle`) e vsel do S2MPS22. Os padrões mantêm o comportamento do 0128; para captura só por DMA use `potf=1`. Diagnóstico em `checks/camera-0129.md` (`457cc33`, `263a48c`): sensor a 30 fps, toda escrita do código Samsung confirmada no hardware, pacotes C-PHY corrompidos (ERR_ID/CRC) desde o 1º quadro. Para retomar: dump do LineageOS com `debug_csi` (exige GPT/userdata/root). O aparelho ficou no Arch com o kernel #12 (`a1040394…`).
 
 - [codex] commit `83c747b`: retorno ao LineageOS concluído; boot original de 59 MiB + GPTs restaurados com readback, somente entradas 13/33 alteradas, Recovery/DTBO iguais aos backups. Android 17/Lineage 24.0 boot_completed=1, SurfaceFlinger running, boot=sda13, lk3rd removido. Sem formatação userdata; snapshots e resultados no HD verificados. Resumo `checks/session-summary-2026-11-17.md`, evidência `checks/return-lineage.md`.
