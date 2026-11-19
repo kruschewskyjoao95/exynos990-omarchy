@@ -143,3 +143,16 @@ Transporte, achados no aparelho:
   - sinal de 4 barras, -74 a -80 dBm.
 - **Escritas não alinhadas:** em `/dev/mem` com `O_SYNC` (memória de dispositivo), uma cópia com `memcpy` de tamanho ímpar dá `SIGBUS`. O daemon copia em palavras alinhadas.
 - **Mensagens retidas:** entre 12 s e 99 s nenhuma mensagem DL chegou. Todas foram entregues juntas logo depois do próximo pedido do AP. Hipótese (proposta): o CP espera `pcie_link_ack` (doorbell `0x1000e`) depois de subir `cp2ap_wakeup`, como em `s5100_poweron_pcie()`. Sem isso, ele segura as mensagens.
+
+### Entrega das mensagens do CP e economia de energia do link (19/11/2026, kernel #18, sem flash)
+
+- **Com o link sempre ligado:** o CP só entrega notificações (registro, sinal) depois de um quadro UL do AP. Um doorbell vazio (`MSG_DATA` sem quadro) ou uma leitura do BAR não basta. O CP também nunca sobe `cp2ap_wakeup` sozinho. Com uma consulta de registro (`08 05` GET) a cada 2 s, as notificações chegam em tempo real: HOME em LTE 2 s depois do modo normal, e o sinal é atualizado. Esse é o modo padrão do `s5123-ril.py`.
+- **Sequência Samsung (`R8S_PCIE_PM=1`, testado):**
+  1. o CP baixa `cp2ap_wakeup`;
+  2. 30 ms depois, o AP tira o Bus Master e o MSI do EP, coloca-o em D3hot e baixa `AP2CP_WAKEUP`;
+  3. o AP faz `PME_Turn_Off`: ack recebido e LTSSM `0x15` (L23_READY);
+  4. o link desliga (PERST);
+  5. 210–250 ms depois, o CP pede o link sozinho (`cp2ap_wakeup` 1);
+  6. o AP religa (`relink 1`, ~200 ms; o EP volta em Gen3 x2): COMMAND do root, IOCC, BAR0, MSI e `pcie_link_ack`, repetido em +0, +50 e +200 ms.
+- **Resultado do ciclo:** depois dele, o CP não consome mais o anel FMT UL (`rp=2`, `wp=3`) e fica mudo. Root e EP estão sem erro AER, e o EP com BusMaster+. O EP marcou `>TAbort+` uma vez. Falta acertar a restauração (ordem de `pci_restore_state`, MSI e BME). Até lá, o link fica ligado.
+- **Detalhe da resposta GET de registro:** ela traz `domain 0 state 1`, um formato diferente da notificação. Isso não indica perda de registro.
