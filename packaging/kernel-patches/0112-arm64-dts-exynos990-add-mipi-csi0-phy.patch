@@ -2,22 +2,21 @@ From: Antigravity <antigravity@local>
 Subject: [PATCH] arm64: dts: exynos990: add mipi_phy_csis0 node
 
 Add the primary MIPI CSI-2 D-PHY node (mipi_phy_csis0 at 0x170d1300)
-wired to pmu_system_controller and the S2MPS22 camera rails.
+inside &soc, wired to pmu_system_controller and the S2MPS22 camera rails.
 
 Signed-off-by: Antigravity <antigravity@local>
 ---
- arch/arm64/boot/dts/exynos/exynos990.dtsi | 10 ++++++++++
- 1 file changed, 10 insertions(+)
+ arch/arm64/boot/dts/exynos/exynos990.dtsi | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
 
 diff --git a/arch/arm64/boot/dts/exynos/exynos990.dtsi b/arch/arm64/boot/dts/exynos/exynos990.dtsi
 index 000000000..000000000 100644
 --- a/arch/arm64/boot/dts/exynos/exynos990.dtsi
 +++ b/arch/arm64/boot/dts/exynos/exynos990.dtsi
-@@ -1093,6 +1093,18 @@
- };
+@@ -1105,6 +1105,18 @@
  
  #include "exynos990-pinctrl.dtsi"
-+
+ 
 +&soc {
 +	mipi_phy_csis0: phy@170d1300 {
 +		compatible = "samsung,mipi-phy-m0s4s4s4s4s4s2";
@@ -29,3 +28,7 @@ index 000000000..000000000 100644
 +		#phy-cells = <1>;
 +	};
 +};
++
+ &gpq0 {
+ 	/* Statically assert BT UART nRTS on gpq0-2 by driving it low. This
+ 	 * UART's hardware auto-flow-control does not drive RTS - the
