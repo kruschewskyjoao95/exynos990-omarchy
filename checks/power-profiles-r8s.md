@@ -62,3 +62,8 @@ Testado no aparelho em 19/11/2026, kernel #18, sem flash. Origem: pedido do prop
 - **Desempenho com carga em 8 núcleos** (`taskset` + laço): em 2 s a zona dos núcleos grandes foi a **85 °C** e o freio térmico entrou (`cooling` 4/8/4, CPUs 1586 / 1794 / 1586 MHz). O teste foi parado ali (limite de 74 °C). **0 erros ACPM/RCU, 8 núcleos online, sem travar.** O grupo M5 (cpu6/7) a 2002 MHz, o ponto que travou em setembro, passou pelas transições do freio sem travar neste ensaio curto.
 - **Recuperação**: 62-65 °C em 5 s depois de tirar a carga; freio solto (0/0/0); perfil devolvido a Balanceado.
 - **Leitura**: o máximo de CPU e GPU (Desempenho) só se sustenta em rajadas curtas; sob carga contínua o freio térmico assume em segundos. O ensaio foi de 2 s; não prova ausência de travamento em uso prolongado.
+
+## Início automático no boot (19/11/2026, observado)
+
+- Falha encontrada: `r8s-power-profile.service` estava em `WantedBy=multi-user.target` com `After=power-profiles-daemon.service`, mas o `power-profiles-daemon` roda depois do `multi-user.target`. O systemd registrou `Found ordering cycle` e **apagou o job do meu serviço no boot** (`Job r8s-power-profile.service/start deleted to break ordering cycle`). Resultado: os perfis (CPU, GPU, brilho, Wi-Fi) só valiam depois de eu reiniciar o serviço à mão.
+- Correção: `WantedBy=graphical.target`. Verificado no aparelho (kernel de produção em RAM): o serviço inicia e aplica o perfil ativo (`gpu -> 156..156 MHz` etc.). A confirmação no boot a frio exige um reinício.
