@@ -65,7 +65,7 @@ Ficam descartados como causa: a taxa e o MCLK do sensor, a tensão dos trilhos d
   - `CMN_CTRL=0x00204e01` (PHY_SEL C-PHY, 3 trios, VC_DT, CSI_EN, deskew 2) e `CLK_CTRL=0x10`.
   - Configuração dos canais: CH0 `0x28ac`/`0x05e807e0`, CH1 `0x128ac`/`0x017a07e0` e CH3 `0x2848`/`0x000207e0`.
   - `LRTE=0x80000000`, `DBG_OPTION=0x00800000` e `PHY_CMN_CTRL=0x1f`.
-- **SYSREG_CSIS `0x17020000`:** `0x404=1`, `0x408=0`, `0x41c=0` (DMA2←CSIS0), `0x440=0`, `0x448=0`, `0x450=0x3fe00`, `0x454=0x1ff` e `0x500=1`. São todos os valores de reset da tabela Samsung (`is-v8_0_0/is-hw-chain.c`).
+- **SYSREG_CSIS `0x17020000`:** `0x404=1`, `0x408=0`, `0x41c=0` (DMA2←CSIS0), `0x440=0`, `0x448=0`, `0x450=0x3fe00`, `0x454=0x1ff` e `0x500=1`. São todos os valores de reset da tabela Samsung (`is-v8_1_0/is-hw-chain.c`; o r8s usa `CONFIG_PABLO_V8_1_0`, conforme `exynos9830_defconfig:3225`, e as tabelas `sysreg_csis_*` são idênticas às do v8.0.0).
 
 Toda a configuração visível no código Samsung está confirmada no hardware. O que resta é algo que o código não mostra: um estado deixado pelo firmware ou pelo HAL no LineageOS, ou uma diferença física.
 
