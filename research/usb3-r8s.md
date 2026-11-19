@@ -58,3 +58,12 @@ Pedido do proprietário: habilitar USB 3 (celular USB-C para notebook USB-A 3.0)
 - USB 3 permite declarar 900 mA: no melhor caso 4,5 W contra 2,5 W hoje. Cabo USB-A para USB-C sempre anuncia corrente padrão (Rp 56 kΩ).
 - Não é possível fazer o PHY SuperSpeed funcionar por tentativa e erro: um valor errado em tabelas de calibração pode deixar o link instável. Cada tentativa sem hardware de teste (analisador de link) é no escuro.
 - O ganho maior de carga está em USB PD (9 V) ou num carregador de parede, não no USB 3.
+
+## Teste com cabo novo e orientação forçada (19/11/2026, observado, só RAM)
+
+- Imagens: kernel de produção (`out/prod`) + DT com `0146` (`r8s-ufs-ss2.img`, `11dae0d8…`) e a mesma com `phy_exynos5_usbdrd.usb3_flip=1` na linha de comando (`r8s-ufs-ss-flip.img`, `33013511…`).
+- Cabo trocado pelo proprietário (modelo não identificado por nós; não sabemos se leva os pares SuperSpeed). Porta do computador com raiz xHCI de 10000M.
+- Orientação lida do GPIO (0) e forçada (1): o PHY informa `USB3 combo PHY enabled (cable flip N): locked`, `CMN_REG01C0=0x37`; o dwc3 sobe como high-speed (DSTS connectspd=0, U0) e o computador enumera o aparelho a **480M** nos dois casos.
+- Typec: `ccstat 1 (sink)`, `cc_status0 0x51` (Rp default, pino 1), BC1.2 SDP.
+- Limite do leitor: os 4 registradores do USBCON vieram idênticos (`03010241`), provável artefato da leitura por `/dev/mem`; não usado como evidência.
+- Decisão: USB 3 encerrado por ora. Resta, se um dia valer o esforço, copiar o restante do fluxo Samsung (`phy_exynos_usb_v3p1_enable/late_enable`) e testar um cabo USB-C para USB-C numa porta USB-C do computador.
