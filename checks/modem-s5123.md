@@ -104,6 +104,18 @@ Falta levar isso para o kernel: um caminho GEN4 no `pci-exynos.c`, ou driver pr�
   - Falta MSI.
 - Os scripts no aparelho ficam em `/usr/local/lib/r8s-modem/`, porque o `/tmp` é tmpfs.
 
+## Memória compartilhada com o CP (levantamento, ainda não aplicado)
+
+O LineageOS reserva (`exynos9830-rmem.dtsi`, compatível `exynos,modem_if`):
+
+| Região | Endereço | Tamanho | `rmem_index` |
+|---|---|---|---|
+| `cp_rmem` (IPC) | `0xF0000000` | 8 MiB | 0 |
+| `cp_msi_rmem` | `0xF6200000` | 4 KiB | 1 |
+| `cp_rmem_2` (PKTPROC) | `0xD0000000` | 32 MiB no r8s (`exynos990-r8s_eur_open_05.dts`), 64 MiB na base | 2 |
+
+**Conflito:** o port reserva `ramoops@f0000000` (4 MiB) no `exynos990-r8s.dts:172`, em cima do `cp_rmem`. Não se sabe se o firmware do CP espera esses endereços fixos. Decisão proposta: manter os endereços Samsung e mudar o `ramoops` de lugar antes de reservar as regiões do CP.
+
 ## Próximos marcos
 
 4. **MAIN e NV pelo PCIe/shmem:** carregar o firmware principal e a calibração NV do EFS, depois o handshake SIPC5.
