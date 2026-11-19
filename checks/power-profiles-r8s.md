@@ -14,6 +14,7 @@ Testado no aparelho em 19/11/2026, kernel #18, sem flash. Origem: pedido do prop
   | Desempenho | 80% | 1846 MHz | 2210 MHz | 1794 MHz |
 
   Balanceado é o ponto fixo de `r8s-safe-freq`.
+- Cada perfil também liga (Economia, Balanceado) ou desliga (Desempenho) a economia de energia do Wi-Fi com `iw ... set power_save`. O Omarchy força `wifi.powersave = 2` (desligada) no NetworkManager; `packaging/power/r8s-wifi-powersave.conf` entra como `zz-r8s-wifi-powersave.conf` com `1` (ignorar) para o serviço decidir.
 - Instalação: `packaging/power/install-power.sh` (root).
 
 ## Decisões e limites
@@ -28,3 +29,15 @@ Testado no aparelho em 19/11/2026, kernel #18, sem flash. Origem: pedido do prop
 - Corrente da bateria com o modem ligado e tela acesa: Desempenho -479 mA, Balanceado -467 mA, Economia -360 mA (cerca de 100 mA a menos, em grande parte pelo brilho).
 - Em repouso, Desempenho e Balanceado quase não diferem. A diferença aparece sob carga, não medida.
 - Uma medição isolada mostrou a thread de renderização do shell com 30% de CPU. Não se repetiu depois de recarregar os plugins e não foi atribuída a nenhum widget.
+
+## Auditoria do kernel em execução (19/11/2026, observado)
+
+- **Medido, aplicado:** economia do Wi-Fi ligada: -346 e -360 mA desligada, -287 mA ligada (modem registrado, tela acesa). Cerca de 60 a 70 mA.
+- **Limite térmico por perfil, testado e retirado:** com histerese de 5 °C, subir o limite não soltava o freio: o grupo cpu6/7 ficou em 546 MHz (estado 14/14) com a temperatura em 59 °C, e reiniciar o modo da zona não ajudou. Os limites ficam em 70 °C (`r8s-thermal-trip`).
+- **Não aplicado, precisa de teste (observado na configuração):**
+  - `clk_ignore_unused` na linha de comando: nenhum clock ocioso é desligado. Mantido de propósito pelo projeto (`research/ufs-clocks.md`); remover pode travar o boot. Só em `fastboot boot` (RAM).
+  - `cpu-big-sleep` (cpu6/7) desabilitado: usos 0, esses núcleos só fazem WFI (`research/cpuidle-m5.md`). Habilitar travou núcleos; não repetir sem teste em RAM.
+  - THP em `always` (5,6 GB de RAM): `madvise` reduziria compactação e memória, sem medição.
+  - `HZ=250` com `PREEMPT` completo: `PREEMPT_VOLUNTARY` e `HZ=100` poupam pouco; exigem compilar e testar o kernel.
+  - GPU sem `devfreq` (clock fixo): nenhum perfil muda a GPU (`research/gpu-dvfs.md`).
+  - O modem continua o maior consumo extra (~300 mA): faltam o sono do link PCIe e do CP.
