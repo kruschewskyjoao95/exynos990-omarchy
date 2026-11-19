@@ -57,30 +57,28 @@ O `ps_hold` acompanha a energia do CP, então **o S5123 é alimentado e reage ao
 
 O bootloader do CP roda com o firmware enviado pelo Arch, e o `cp2ap_wakeup=1` é a condição de `check_cp_status()` para `register_pcie()`.
 
-## Marco 3: PCIe canal 1 (bloqueado)
+## Marco 3: PCIe canal 1 (feito, protótipo em espaço de usuário, kernel #13)
 
-O controlador do modem é o **GEN4_1 do HSI2** (`pcie@13D20000`), um IP diferente do GEN2/HSI1 do Wi-Fi, que é o que o `pci-exynos.c` do port suporta. O protótipo `packaging/modem/cp-pcie-link.py` reproduz pelo `/dev/mem` a sequência `exynos_pcie_rc_poweron()`/`establish_link()` e a calibração `chip_ver=1` de `pcie-exynos9830-rc-cal.c` (cerca de 140 escritas literais).
+O controlador do modem é o **GEN4_1 do HSI2** (`pcie@13D20000`), diferente do GEN2/HSI1 do Wi-Fi. O protótipo `packaging/modem/cp-pcie-link.py` reproduz pelo `/dev/mem` a sequência `s5100_poweron_pcie()`/`exynos_pcie_rc_poweron()`/`establish_link()` e a calibração `chip_ver=1` de `pcie-exynos9830-rc-cal.c`.
 
-**Resultado: o primeiro acesso ao ELBI (`0x13D202C8`) trava o SoC.** É um travamento seco, sem panic e sem pstore, e o watchdog reinicia o aparelho. Isso foi reproduzido numa sondagem só de leitura com o CP desligado. PMU `0x720` (=0) e SYSREG_HSI2 `+0x0`/`+0x800` (=0/`0x81084`) leem normalmente.
+Duas armadilhas, cada uma achada no aparelho:
+1. **Isolação do PHY antes de tudo.** ELBI, PHY, PCS e DBI ficam atrás do bit 0 do PMU `0x15860720`. Qualquer acesso antes de liberá-lo trava o SoC (travamento seco e reboot pelo watchdog, reproduzido duas vezes). Com o bit em 1, o ELBI responde (`LTSSM=0xfb7f00`, `SOFT_RESET=0xf`). É a mesma ordem do caminho Wi-Fi do port (`0x718` primeiro).
+2. **`AP2CP_WAKEUP` (gpg1-3, `gpiochip12` linha 3) = 1, depois 5 ms**, antes do power-on do RC, como `s5100_poweron_pcie()`. Sem ele, o LTSSM fica em `DETECT_QUIET`↔`DETECT_ACT`: o endpoint não apresenta terminação.
 
-Verificado ativo, ou seja, não é clock:
+Resultado com o CP em boot por SPI (`ps_hold=cp2ap_wakeup=1`):
 
-| Bloco | Estado |
+| Item | Valor |
 |---|---|
-| CMU_TOP | `hsi2_bus` 200 MHz e `hsi2_pcie` 800 MHz, hw enable `Y` |
-| CMU_HSI2, `MUX_USER` | `BUS_USER`/`PCIE_USER` = `0x10` (CMU selecionado) |
-| CMU_HSI2, gates do GEN4_1 | `0x2018`–`0x2030` e `0x204c` = `0x200000` |
-| CMU_HSI2, QCH | `0x3028`–`0x3038` = `0x3f0002` |
-| Barramento e reset-sync | LHM/LHS/XIU/RSTNSYNC/SYSREG/D_TZPC = `0x200000` |
+| LTSSM | `POLL_ACTIVE` → `POLL_CONFIG` → `CFG_IDLE` → **L0** em < 0,1 ms |
+| Link (DBI `0x80`) | `0x30210000`: **Gen1 x2** (`num-lanes = <2>` do LineageOS) |
+| RC (DBI) | `144d:a5a5`, `header_type=1` |
+| **Endpoint (barramento 1)** | **`144d:a5a5`**, class/rev `0x00000001`, **`header_type=0`**, BAR0 `0x00000004` (memória de 64 bits) |
 
-No LineageOS o probe do `exynos-pcie-rc` acessa o ELBI (`enable_interrupts(pp, 0)`) antes de qualquer ajuste de PMU e sem clocks próprios (`pcie-clk-num = <0>`). Então lá o bloco já está acessível. Hipóteses abertas, não testadas:
-- reset ou isolamento de energia do sub-bloco PCIe do HSI2 deixado pelo caminho de boot (S-Boot → lk3rd → uniLoader);
-- proteção TrustZone (`D_TZPC_HSI2`) marcando o GEN4_1 como seguro.
+Para ler o barramento 1: barramento secundário do RC = 1 (DBI `0x18 = 0x00010100`) e iATU região 0 (DBI `+0x300000`) como CFG0, com a janela `config` em `0x14FFE000`. É o `exynos_pcie_rc_prog_viewport_cfg0()`. O `s51xx_pcie` do LineageOS aceita qualquer `PCI_VENDOR_ID_SAMSUNG`.
 
-Para o marco 4, há chamadas SMC de verificação de boot do CP em `cpif/link_device.c:2280-2293` (`exynos_smc(SMC_ID, msr.mode…)`, `MODE_CP_CHECK_CONTINUE`). A EL3 provavelmente valida o firmware MAIN antes de liberar o CP.
+Falta levar isso para o kernel: um caminho GEN4 no `pci-exynos.c`, ou driver próprio, mais o nó `pcie@13D20000` com a ordem PMU → AP2CP_WAKEUP → PHY.
 
 ## Próximos marcos
 
-3. **PCIe1** (`pcie@13D20000`, PERST, S2MPU): o endpoint Shannon enumera no `lspci`.
 4. **MAIN e NV pelo PCIe/shmem:** carregar o firmware principal e a calibração NV do EFS, depois o handshake SIPC5.
 5. **Dados:** abrir o contexto PDP pelo protocolo IPC Samsung (FMT) e criar o `rmnet` sobre SBD/PKTPROC. É o trecho sem implementação aberta conhecida.

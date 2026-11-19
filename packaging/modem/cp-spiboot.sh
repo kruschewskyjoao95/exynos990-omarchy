@@ -3,7 +3,9 @@
 # Milestone 2: SPI-boot the Shannon S5123 BOOT section from the radio partition,
 # as LineageOS cpboot_spi_load_cp_image() + power_on_cp(), then power the CP off.
 set -u
-modprobe spidev bufsiz=65536 2>/dev/null || true
+# spidev may already be bound with the 4 KiB default buffer: reload it.
+[ "$(cat /sys/module/spidev/parameters/bufsiz 2>/dev/null)" = 65536 ] || { modprobe -r spidev 2>/dev/null; modprobe spidev bufsiz=65536; }
+[ "$(cat /sys/module/spidev/parameters/bufsiz)" = 65536 ] || { echo "spidev sem bufsiz=65536"; exit 1; }
 [ -e /dev/spidev0.0 ] || { echo "sem /dev/spidev0.0"; ls /sys/bus/spi/devices/spi0.0/; exit 1; }
 
 # radio TOC: BOOT at 0x320, size 0xfb90 (read-only)

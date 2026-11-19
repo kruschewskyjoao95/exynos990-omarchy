@@ -7,10 +7,10 @@
 # pcie-exynos9830-rc-cal.c exynos_pcie_rc_pcie_phy_config() for chip_ver 1
 # (&pcie_2 chip-ver = <1> in exynos990-r8s_eur_open_05.dts).
 # shortcut: register pokes through /dev/mem, upgrade to a pci-exynos.c GEN4 path once L0 is proven.
-# WARNING (19/11/2026): on r8s kernel #13 the first ELBI read (0x13D202C8) hangs the SoC
-# (hard lockup, watchdog reboot) even with all CMU_HSI2 gates/QCH on. Do not run until the
-# missing enable (reset/isolation/TZPC) is found; see checks/modem-s5123.md.
-import mmap, os, struct, subprocess, sys, time
+# ELBI/PHY/PCS/DBI sit behind the PMU PCIe1 PHY isolation (0x15860720 bit 0): any access
+# before releasing it hard-locks the SoC (found 19/11/2026, see checks/modem-s5123.md).
+import functools, mmap, os, struct, subprocess, sys, time
+print = functools.partial(print, flush=True)
 
 ELBI, PHY, SYSREG, DBI, PCS = 0x13D20000, 0x13D50000, 0x13C20000, 0x13800000, 0x13D40000
 PMU, PINCTRL_HSI2 = 0x15860000, 0x13C30000
@@ -84,9 +84,14 @@ pud = rd(PINCTRL_HSI2, 0x8); wr(PINCTRL_HSI2, 0x8, (pud & ~0xf) | 0x3)
 drv = rd(PINCTRL_HSI2, 0xc); wr(PINCTRL_HSI2, 0xc, (drv & ~0xff) | 0x33)
 gpio(1, 0)
 
+# s5100_poweron_pcie(): AP2CP_WAKEUP (gpg1-3) = 1, 5 ms, before the RC power-on; it asks
+# the CP bootloader to bring its PCIe endpoint up (requires CP2AP_WAKEUP already high).
+subprocess.run(["gpioset", "-p", "5ms", "-t", "0", "-c", "gpiochip12", "3=1"], check=True)
+
 try:
-    print("antes: pmu=%#x ltssm=%#x" % (rd(PMU, PMU_PCIE1_PHY), rd(ELBI, 0x2C8) & 0x3f))
-    wr(PMU, PMU_PCIE1_PHY, rd(PMU, PMU_PCIE1_PHY) | 1)   # PHY isolation bypass
+    wr(PMU, PMU_PCIE1_PHY, rd(PMU, PMU_PCIE1_PHY) | 1)   # PHY isolation bypass: MUST precede any ELBI access
+    ms(1)
+    print("isolação liberada: pmu=%#x ltssm=%#x" % (rd(PMU, PMU_PCIE1_PHY), rd(ELBI, 0x2C8) & 0x3f), flush=True)
     wr(PHY, 0x400, 0x0)                                   # PHY all power down clear
     wr(PCS, 0x180, 0x0D)                                  # force_pclk_en
     phy_config()
@@ -113,7 +118,21 @@ try:
     lnk = rd(DBI, 0x80)
     print("DBI 0x80 link ctrl/stat=%#010x  speed=Gen%d width=x%d" % (lnk, (lnk >> 16) & 0xf, (lnk >> 20) & 0x3f))
     print("DBI vendor/device do RC=%#010x" % rd(DBI, 0x0))
-    print("RESULTADO:", "LINK L0" if seen and seen[-1][1] == 0x11 else "sem link")
+    linked = seen and seen[-1][1] == 0x11
+    print("RESULTADO:", "LINK L0" if linked else "sem link")
+    if linked:
+        # exynos_pcie_rc_prog_viewport_cfg0(): iATU region 0 outbound CFG0 -> bus 1 dev 0 fn 0,
+        # through the "config" window 0x14FFE000 (DBI + 0x300000 = unrolled iATU).
+        CFG = 0x14FFE000
+        wr(DBI, 0x18, 0x00010100)                           # RC bridge: primary 0, secondary 1, subordinate 1
+        atu = DBI + 0x300000
+        for off, val in ((0x08, CFG), (0x0C, 0), (0x10, CFG + 0xFFF), (0x14, 1 << 24), (0x18, 0),
+                         (0x00, 0x4), (0x04, 1 << 31)):
+            wr(atu, off, val)
+        ms(1)
+        idr = rd(CFG, 0x0); cls = rd(CFG, 0x8); hdr = (rd(CFG, 0xC) >> 16) & 0x7f; bar0 = rd(CFG, 0x10)
+        print("RC     (DBI):   class/rev=%#010x header_type=%d" % (rd(DBI, 0x8), (rd(DBI, 0xC) >> 16) & 0x7f))
+        print("modem (bus 1): vendor/device=%#010x class/rev=%#010x header_type=%d BAR0=%#010x" % (idr, cls, hdr, bar0))
 finally:
     power_down()
     print("PCIe ch1 desligado: pmu=%#x" % rd(PMU, PMU_PCIE1_PHY))
