@@ -30,6 +30,7 @@ Em ordem; pegar a primeira livre e mover para "Em andamento". Plano em [roadmap/
 8. [claude] Revisar logs/artefatos gerados em M2–M4 no aparelho real antes de avançar para M5.
 
 ## Feito, aguardando revisão
+- [claude] commit `107aaf6`: S5123 responde `PHONE_START` (`0xc8`) ao `PIF_INIT_DONE` quando o doorbell leva `+0x10000` (`DOORBELL_INT_ADD`, cpif legacy.h). Testado 2× no #18, sem flash; boot via CUSE com o mesmo valor conferido (`cbd` rc 0). Evidência em `research/modem-cbd-boot.md`. Próximo: `init_legacy_link`/`INIT_END` e transporte SBD para RIL/RFS.
 - [codex] `2811745`: reproduzido `INIT_START` (`0xc1`) no S5123 #18 após o firmware. Dois ensaios de `PIF_INIT_DONE` com descritores experimentais não chegaram a `PHONE_START`. Evidência em `research/modem-cbd-boot.md`.
 
 - [codex] `c452485`: MSI do endpoint e SIPC5 alinhado a 8 bytes confirmaram boot completo do S5123 (`0xAF00`, `cbd` rc 0, `phone_active` ativo) no #18. IPC em operação normal e dados celulares pendentes. Evidência em `research/modem-cbd-boot.md`.
