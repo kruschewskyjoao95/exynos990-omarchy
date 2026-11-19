@@ -20114,10 +20114,10 @@ index 000000000..8f4d4b0c6
 +#endif /* DRIVER_USB_USB30_DRD_PHY_EXYNOS_USBDP_GEN2_V2_REG_H_ */
 diff --git a/drivers/phy/samsung/phy-exynos-usbdp-gen2-v2.c b/drivers/phy/samsung/phy-exynos-usbdp-gen2-v2.c
 new file mode 100644
-index 000000000..58b61e37c
+index 000000000..0ec8dd9e7
 --- /dev/null
 +++ b/drivers/phy/samsung/phy-exynos-usbdp-gen2-v2.c
-@@ -0,0 +1,4440 @@
+@@ -0,0 +1,4430 @@
 +/*
 + * phy-exynos-usbdp-gen2-v2.c
 + *
@@ -24508,34 +24508,24 @@ index 000000000..58b61e37c
 +{
 +	int ret = 0;
 +
-+	printk(KERN_INFO "usb3: usbdp ctrl_pma_ready ...\n");
 +	phy_exynos_usbdp_g2_v2_ctrl_pma_ready(info);
-+	printk(KERN_INFO "usb3: usbdp aux_force_off ...\n");
 +	phy_exynos_usbdp_g2_v2_aux_force_off(info);
-+	printk(KERN_INFO "usb3: usbdp default_sfr_update ...\n");
 +	phy_exynos_usbdp_g2_v2_pma_default_sfr_update(info);
-+	printk(KERN_INFO "usb3: usbdp set_pcs ...\n");
 +	phy_exynos_usbdp_g2_v2_set_pcs(info);
-+	printk(KERN_INFO "usb3: usbdp tune ...\n");
 +	phy_exynos_usbdp_g2_v2_tune(info);
-+	printk(KERN_INFO "usb3: usbdp lane_mux_sel ...\n");
 +	phy_exynos_usbdp_g2_v2_pma_lane_mux_sel(info);
-+	printk(KERN_INFO "usb3: usbdp rst_release ...\n");
 +	phy_exynos_usbdp_g2_v2_ctrl_pma_rst_release(info);
 +
-+	printk(KERN_INFO "usb3: usbdp pll_lock ...\n");
 +	ret = phy_exynos_usbdp_g2_v2_pma_check_pll_lock(info);
 +	if (!ret) {
 +		ret = phy_exynos_usbdp_g2_v2_pma_check_cdr_lock(info);
 +	}
 +
-+	printk(KERN_INFO "usb3: usbdp locked (%d), late tune ...\n", ret);
 +	usleep_range(10000, 11000);
 +
 +	phy_exynos_usbdp_g2_v2_tune_late(info);
 +	phy_exynos_usbdp_g2_v2_pma_check_offset_cal_code(info);
 +
-+	printk(KERN_INFO "usb3: usbdp enable done\n");
 +	return ret;
 +}
 +
@@ -24593,7 +24583,7 @@ index 000000000..d8a62ed28
 +
 +#endif /* DRIVER_USB_USBPHY_CAL_PHY_EXYNOS_USBDP_GEN2_V2_H_ */
 diff --git a/drivers/phy/samsung/phy-exynos5-usbdrd.c b/drivers/phy/samsung/phy-exynos5-usbdrd.c
-index 781b2cdb8..69c879166 100644
+index 781b2cdb8..3524ba2cf 100644
 --- a/drivers/phy/samsung/phy-exynos5-usbdrd.c
 +++ b/drivers/phy/samsung/phy-exynos5-usbdrd.c
 @@ -23,6 +23,12 @@
@@ -24644,7 +24634,7 @@ index 781b2cdb8..69c879166 100644
  	/* the register block is only clocked while we hold the PHY clocks */
  	ret = clk_bulk_prepare_enable(phy_drd->drv_data->n_clks, phy_drd->clks);
  	if (ret)
-@@ -1517,6 +1537,73 @@ static const struct exynos5_usbdrd_phy_drvdata exynos850_usbdrd_phy = {
+@@ -1517,6 +1537,71 @@ static const struct exynos5_usbdrd_phy_drvdata exynos850_usbdrd_phy = {
  	.n_regulators		= ARRAY_SIZE(exynos5_regulator_names),
  };
  
@@ -24673,9 +24663,7 @@ index 781b2cdb8..69c879166 100644
 +	 * The combo PHY registers are behind the PMU isolation above: touching them while it is set hangs the
 +	 * SoC (as the PCIe PHY does). dwc3 runs phy_init() before phy_power_on(), so release it here.
 +	 */
-+	printk(KERN_INFO "usb3: pipe3 init, releasing PMU isolation\n");
 +	inst->phy_cfg->phy_isol(inst, false);
-+	printk(KERN_INFO "usb3: isolation released\n");
 +	if (phy_drd->phy_port)
 +		flip = gpiod_get_value_cansleep(phy_drd->phy_port);
 +	if (usb3_flip >= 0)
@@ -24718,7 +24706,7 @@ index 781b2cdb8..69c879166 100644
  static const struct exynos5_usbdrd_phy_tuning exynos990_tunes_utmi_postinit[] = {
  	PHY_TUNING_ENTRY_PHY(EXYNOS850_DRD_HSPPARACON,
  			     (HSPPARACON_TXVREF |
-@@ -1534,10 +1621,11 @@ static const struct exynos5_usbdrd_phy_tuning *exynos990_tunes[PTS_MAX] = {
+@@ -1534,10 +1619,11 @@ static const struct exynos5_usbdrd_phy_tuning *exynos990_tunes[PTS_MAX] = {
  };
  
  static const struct exynos5_usbdrd_phy_drvdata exynos990_usbdrd_phy = {
@@ -24731,7 +24719,7 @@ index 781b2cdb8..69c879166 100644
  	.clk_names		= exynos5_clk_names,
  	.n_clks			= ARRAY_SIZE(exynos5_clk_names),
  	.core_clk_names		= exynos5_core_clk_names,
-@@ -1794,6 +1882,21 @@ static int exynos5_usbdrd_phy_probe(struct platform_device *pdev)
+@@ -1794,6 +1880,21 @@ static int exynos5_usbdrd_phy_probe(struct platform_device *pdev)
  		phy_drd->reg_phy = devm_platform_ioremap_resource(pdev, 0);
  		if (IS_ERR(phy_drd->reg_phy))
  			return PTR_ERR(phy_drd->reg_phy);
@@ -24755,10 +24743,10 @@ index 781b2cdb8..69c879166 100644
  	ret = exynos5_usbdrd_phy_clk_handle(phy_drd);
 diff --git a/drivers/phy/samsung/phy-exynos990-usb3.c b/drivers/phy/samsung/phy-exynos990-usb3.c
 new file mode 100644
-index 000000000..37070e6d1
+index 000000000..2ee573c1c
 --- /dev/null
 +++ b/drivers/phy/samsung/phy-exynos990-usb3.c
-@@ -0,0 +1,135 @@
+@@ -0,0 +1,132 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Exynos 990 (r8s) USB 3.1 SuperSpeed PHY bring-up: glue around Samsung's USB/DP combo PHY CAL.
@@ -24879,11 +24867,8 @@ index 000000000..37070e6d1
 +	if (!soc_device_match(evt1_1))
 +		dev_warn(dev, "USB3 PHY tables are for Exynos 990 EVT1.1; this chip revision is untested\n");
 +
-+	printk(KERN_INFO "usb3: pipe_ovrd ...\n");
 +	exynos990_usb3_pipe_ovrd(&usb_info);
-+	printk(KERN_INFO "usb3: pma_ready ...\n");
 +	exynos990_usb3_pma_ready(&usb_info);
-+	printk(KERN_INFO "usb3: combo enable ...\n");
 +	ret = phy_exynos_usbdp_g2_v2_enable(&combo_info);
 +	dev_info(dev, "USB3 combo PHY enabled (cable flip %d): %s\n", flip, ret ? "PLL/CDP lock failed" : "locked");
 +	return 0;

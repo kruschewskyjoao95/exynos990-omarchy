@@ -1,0 +1,24 @@
+From: Claude <noreply@anthropic.com>
+Subject: [PATCH] r8s: enable the Mali GPU devfreq (r8s_gpu_dvfs=1, panfrost.r8s_devfreq=1) from the DT bootargs
+
+The G3D clock and Panfrost devfreq of patch 0102 are opt-in: they need r8s_gpu_dvfs=1 on the kernel command line
+and panfrost.r8s_devfreq=1. Both are verified on the phone in a RAM boot (all seven levels 156..800 MHz accepted,
+the devfreq min/max limits followed under load, 377 MHz before the GPU powers off, 0 ACPM errors), so they now
+come with the DT bootargs, which the boot image carries. The power profiles (r8s-power-profile) use the devfreq
+limits; without these options they leave the GPU alone.
+
+Signed-off-by: Claude <noreply@anthropic.com>
+---
+diff --git a/arch/arm64/boot/dts/exynos/exynos990-r8s.dts b/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
+index d7bdcb8..ab3cd40 100644
+--- a/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
++++ b/arch/arm64/boot/dts/exynos/exynos990-r8s.dts
+@@ -40,7 +40,7 @@
+ 		 * never written, so Android still boots if stock `boot` is restored.
+ 		 * loglevel dropped to 4: at 7 the panel console scrolls too fast to read.
+ 		 */
+-		bootargs = "console=tty0 loglevel=7 ignore_loglevel no_console_suspend irqchip.gicv3_pseudo_nmi=1 clk_ignore_unused root=/dev/sda32 rootfstype=ext4 rw rootwait";
++		bootargs = "r8s_gpu_dvfs=1 panfrost.r8s_devfreq=1 console=tty0 loglevel=7 ignore_loglevel no_console_suspend irqchip.gicv3_pseudo_nmi=1 clk_ignore_unused root=/dev/sda32 rootfstype=ext4 rw rootwait";
+ 
+ 		/*
+ 		 * The r8s bootloader lights the panel at its native resolution and

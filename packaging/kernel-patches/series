@@ -35,3 +35,4 @@
 0142-r8s-modem-s5123-endpoint-shmem.patch
 0143-r8s-modem-pcie-root-port-bar-masks.patch
 0145-r8s-usb3-superspeed-phy.patch
+0147-r8s-gpu-devfreq-bootargs.patch
