@@ -12,7 +12,7 @@ index 000000000..000000000 100644
 --- a/arch/arm64/boot/dts/exynos/exynos990.dtsi
 +++ b/arch/arm64/boot/dts/exynos/exynos990.dtsi
 @@ -1118,8 +1118,13 @@
- &soc {
+ 
  	csis0: csis@17030000 {
  		compatible = "samsung,exynos990-csis";
 -		reg = <0x17030000 0x1000>;
