@@ -19,3 +19,16 @@ Relato do proprietário: no notebook (porta que devia dar 10 W), com dois cabos,
 
 - **Negociar PD (9 V).** O Android fecha contrato PD e carrega a ~25 W. Aqui, a seleção do PDO é feita pelo AP: o firmware da PMIC recebe as capacidades da fonte e o driver precisa escolher um PDO e enviar o comando. Isso é trabalho de kernel (driver + teste com carregador PD e medidor USB) e não existe hoje.
 - Na porta do notebook (corrente padrão), mesmo com PD o ganho depende de a porta oferecer PD.
+
+## Teste com o carregador de notebook (19/11/2026, kernel #17, observado)
+
+- `packaging/power/r8s-charge-watch.sh` (1 Hz, serviço no próprio aparelho) gravou 285 s com duas fontes.
+- **USB do computador**: `ISTAT 1`, tipo 1 (SDP), sem PD, USB 2.0 (`high-speed`); a bateria **descarregava** (-670 a -1000 mA) com tela e modem ligados.
+- **Carregador do notebook**: `ISTAT 3` (3 A), tipo 3 (DCP), `psrdy 1`. O `r8s-charge-limit.sh` liberou entrada de 3,0 A e carga de 2,0 A. A bateria recebeu **+1,9 a +2,0 A** (≈7,8 W), 45% -> 48% em 4 min. A corrente ficou presa nos **2 A do limite**, não no carregador.
+- **Calor**: a zona dos núcleos grandes foi de 59 para 68 °C durante a carga (tela e modem ligados), com pico de 70 °C (onde o freio térmico entra).
+
+## Limite de carga por perfil
+
+- `r8s-power-profile.py` grava o teto em `/run/r8s-charge-cap` e roda `r8s-charge-limit.sh`, que usa o **menor** entre o que a fonte oferece e esse teto: Economia 1,0 A, Balanceado 2,0 A, Desempenho 2,0 A.
+- Testado com o carregador ligado: Economia 980 mA na bateria; Balanceado 1921 mA.
+- O teto vale a cada conexão (udev) e a cada troca de perfil.

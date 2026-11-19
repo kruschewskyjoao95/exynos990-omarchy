@@ -23,12 +23,14 @@ SETTLE_S = 0.5
 # wifi_ps: Wi-Fi power save, measured at ~60-70 mA on this phone (-350 mA off, -287 mA on); on except Performance.
 # The thermal trip stays at r8s-thermal-trip's 70 C for every profile: moving it per profile left a cluster
 # stuck at its lowest frequency (the zone only releases 5 C below the trip), seen on the big cluster.
+# charge_ua: ceiling for the battery charge current (uA), applied through r8s-charge-limit.sh together with what the
+# source offers (the lower one wins). Charging heats the phone: 2 A raised the big-core zone 59 -> 68 C in 4 minutes.
 PROFILES = {
-    "power-saver": {"brightness": 30, "wifi_ps": True,
+    "power-saver": {"brightness": 30, "wifi_ps": True, "charge_ua": 1000000,
                     "cpu": {"policy0": 806000, "policy4": 845000, "policy6": 858000}},
-    "balanced": {"brightness": 50, "wifi_ps": True,
+    "balanced": {"brightness": 50, "wifi_ps": True, "charge_ua": 2000000,
                  "cpu": {"policy0": 1456000, "policy4": 1690000, "policy6": 1586000}},
-    "performance": {"brightness": 80, "wifi_ps": False,
+    "performance": {"brightness": 80, "wifi_ps": False, "charge_ua": 2000000,
                     "cpu": {"policy0": 1846000, "policy4": 2210000, "policy6": 1794000}},
 }
 
@@ -59,6 +61,17 @@ def set_wifi_powersave(on):
     for line in out.splitlines():
         if line.strip().startswith("Interface"):
             subprocess.run(["iw", "dev", line.split()[1], "set", "power_save", "on" if on else "off"])
+
+
+def set_charge_cap(ua):
+    """Leave the ceiling for r8s-charge-limit.sh and re-apply it now if a charger is connected."""
+    import subprocess
+    try:
+        wr("/run/r8s-charge-cap", ua)
+    except OSError as e:
+        return log("charge cap: %s" % e)
+    if os.path.exists("/usr/local/bin/r8s-charge-limit.sh"):
+        subprocess.run(["/usr/local/bin/r8s-charge-limit.sh"])
 
 
 def dmesg_errors():
@@ -106,6 +119,7 @@ def apply(profile):
     except OSError as e:
         log("brightness: %s" % e)
     set_wifi_powersave(cfg["wifi_ps"])
+    set_charge_cap(cfg["charge_ua"])
     for policy in CLUSTER_ORDER:
         if not pin(policy, cfg["cpu"][policy]):
             log("ACPM errors after %s: stopping here, the other clusters keep their last pin" % policy)
@@ -132,7 +146,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--check":          # self-check without touching the phone
         for name, cfg in PROFILES.items():
             assert 0 < cfg["brightness"] <= 100 and set(cfg["cpu"]) == set(CLUSTER_ORDER), name
-            assert isinstance(cfg["wifi_ps"], bool), name
+            assert isinstance(cfg["wifi_ps"], bool) and 500000 <= cfg["charge_ua"] <= 2000000, name
         assert [p["brightness"] for p in PROFILES.values()] == [30, 50, 80]
         print("ok")
         sys.exit(0)

@@ -25,6 +25,11 @@ case $istat in
 	3) in_ua=3000000; chg_ua=2000000 ;;     # source offers 3 A
 	*) in_ua=1500000; chg_ua=1500000 ;;     # 1.5 A, default or unknown: as before, AICL protects
 esac
+# The power profile (r8s-power-profile) leaves a charge-current ceiling in CAP: Power saver charges slower so the
+# phone stays cooler (2 A raised the big-core zone from 59 to 68 C in 4 minutes with the screen on).
+CAP=/run/r8s-charge-cap
+cap=none
+[ -r $CAP ] && cap=$(cat $CAP) && [ "$cap" -gt 0 ] 2>/dev/null && [ "$cap" -lt "$chg_ua" ] && chg_ua=$cap
 echo $in_ua > $C/input_current_limit 2>/dev/null
 echo $chg_ua > $C/constant_charge_current 2>/dev/null
-logger -t r8s-charge "source Rp ISTAT=$istat chgtyp=$chgtyp: input limit $(cat $C/input_current_limit) uA, charge $(cat $C/constant_charge_current) uA"
+logger -t r8s-charge "source Rp ISTAT=$istat chgtyp=$chgtyp, profile cap $cap: input limit $(cat $C/input_current_limit) uA, charge $(cat $C/constant_charge_current) uA"
