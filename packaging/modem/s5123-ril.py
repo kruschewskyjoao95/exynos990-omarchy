@@ -205,21 +205,26 @@ class Wakeup:
             self.pcie_on()
             return
         self.ap.set_value(3, Value.ACTIVE)
-        end = time.monotonic() + 0.3
+        # The CP answers ap2cp_wakeup only together with the doorbell that follows (research notes), so do not
+        # wait long here; the caller's doorbell wakes it.
+        end = time.monotonic() + 0.02
         while self.cp.get_value(0) != Value.ACTIVE and time.monotonic() < end:
             time.sleep(0.001)
-        up = self.cp.get_value(0) == Value.ACTIVE
-        if up:
+        if self.cp.get_value(0) == Value.ACTIVE:
             struct.pack_into("<I", self.link.db, 0, DB_LINK_ACK)
-        self.last = up
-        log("AP woke the CP: cp2ap_wakeup %d%s" % (up, ", pcie_link_ack sent" if up else " (no answer in 300 ms)"))
+        if DEBUG:
+            log("AP woke the CP: cp2ap_wakeup %d" % (self.cp.get_value(0) == Value.ACTIVE))
 
     def poll(self):
         v = self.cp.get_value(0) == Value.ACTIVE
         if v != self.last:
-            log("cp2ap_wakeup %d" % v)
+            if DEBUG:
+                log("cp2ap_wakeup %d" % v)
             if v and self.down:
                 self.pcie_on()                          # the CP asks for the link: it has something to send
+            elif v and self.ap and self.ap.get_value(3) != Value.ACTIVE:
+                self.ap.set_value(3, Value.ACTIVE)      # the CP woke on its own: answer as s5100_poweron_pcie()
+                struct.pack_into("<I", self.link.db, 0, DB_LINK_ACK)
             self.fell = None if v else time.monotonic()
             self.last = v
         # 30 ms after the fall, still low and nothing of ours waiting: let the CP sleep (s5100_poweroff_pcie)
@@ -228,6 +233,12 @@ class Wakeup:
             self.fell = None
             self.pcie_off()
             log("PCIe off (CP may sleep)")
+        # Without the PCIe cycle: still lower ap2cp_wakeup after the CP lets go, so the CP may sleep (held at 1
+        # it never does: measured ~340 mA for the modem with the radio idle). The link stays up.
+        elif (not self.pm and self.fell and time.monotonic() - self.fell > 0.03 and self.ap
+                and self.ap.get_value(3) == Value.ACTIVE and not self.link.ul_pending()):
+            self.fell = None
+            self.ap.set_value(3, Value.INACTIVE)
 
 
 class Data:
@@ -596,7 +607,9 @@ def main():
     poll = float(os.environ.get("R8S_POLL_S", "2"))   # registration GET this often: a UL frame lets the CP flush
     next_poll = 5.0
     next_kick, shown_link, online = 0.0, False, False   # online: the CP has taken INIT_END (sent us a frame)
-    last_write = 0.0
+    last_write, aspm_on = 0.0, os.environ.get("R8S_ASPM", "1") != "1"
+    # 20 ms between looks at the rings: the CP's frames wait in shared memory, nothing needs 2 ms (7% CPU)
+    loop_s = float(os.environ.get("R8S_LOOP_MS", "20")) / 1000
     while time.monotonic() - t_up < run_s and not stop:
         if time.monotonic() - last_write > 2:
             last_write = time.monotonic()
@@ -731,7 +744,13 @@ def main():
         if not asked_normal and now > 3 and not prefs["airplane"]:
             asked_normal = True
             L.fmt(0x01, 0x07, 0x01, b"\x02\x02")              # normal mode: the radio may register
-        time.sleep(0.002)
+        if online and not aspm_on:
+            aspm_on = True
+            # ASPM L1 on both ends (LnkCtl bits 1:0 = 10): measured -90 mA at idle, IPC unaffected
+            for dev in ("0001:00:00.0", "0001:01:00.0"):
+                subprocess.run(["setpci", "-s", dev, "CAP_EXP+10.W=0002:0003"])
+            log("PCIe ASPM L1 enabled")
+        time.sleep(loop_s)
     write_status(st, None, "off", prefs)
     L.fmt(0x01, 0x07, 0x01, b"\x01\x00")                      # back to low power before power-off
     time.sleep(1)

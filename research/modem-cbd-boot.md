@@ -194,3 +194,23 @@ Transporte, achados no aparelho:
   - Dados desligados: `0D 04` com estado 0 desativa o contexto, e o CP confirma com `0D 10` status 3.
   - O APN vem da operadora registrada (TIM → `timbrasil.br`), ou de `R8S_APN`.
   - O widget `r8s.cellular` abre um cartão com as duas chaves. Ele só roda as linhas de comando fixas do `r8s-modem-ctl`.
+
+### Consumo de energia do modem (19/11/2026, kernel #18, tela ligada, Wi-Fi, sem flash)
+
+- **Medido** (`current_now` da bateria, média de 20 a 30 s):
+
+  | Situação | Corrente |
+  |---|---|
+  | serviço do modem parado | -148 a -165 mA |
+  | modem registrado, dados ligados | -510 a -520 mA |
+  | dados desligados | -518 mA |
+  | modo avião (rádio em baixo consumo, CP ligado) | -475 mA |
+
+  Quase todo o excesso (~300 mA) vem do CP ligado e do link PCIe, não do rádio nem dos dados.
+- **Mudanças que reduziram o consumo** (testadas):
+  - ASPM L1 nos dois lados do link: cerca de -90 mA;
+  - `ap2cp_wakeup` baixado depois que o CP larga `cp2ap_wakeup`, em vez de preso em 1: -426 mA;
+  - laço do daemon de 2 ms para 20 ms: a CPU do daemon caiu de 7% para 0,9%.
+- **Não testado:** receber SMS, ligação ou pacote com o CP dormindo. O CP acorda o AP subindo `cp2ap_wakeup` (gpm30-0), e o daemon trata esse sinal. Falta um teste de ponta a ponta.
+- **Ainda sem solução:** o ciclo completo da Samsung (PME_Turn_Off, PERST e religar no pedido do CP) desliga o link, mas o CP não volta a consumir os anéis depois do nosso religamento. É o que derrubaria o consumo para perto de 150 mA.
+- **CPU:** `r8s-safe-freq` fixa os três clusters (1456, 1690 e 1586 MHz, mínimo igual ao máximo) por causa de travamentos do DVFS via ACPM. Isso mantém a CPU quente e gastando mesmo parada. Mudar não é seguro sem teste em RAM.
