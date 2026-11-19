@@ -1,0 +1,43 @@
+From: Antigravity <antigravity@local>
+Subject: [PATCH] media: r8s-camera: use OTF WDMA path (POTF_ONLY=0, DMA_DATA_CTRL=0) with 533 MHz CSIS bus
+
+0127 proved that WDMA2 + IRQ 78 captures 3.7 MiB RAW10 in 44 ms using
+DMA_DATA_CTRL=0 (OTF) at 533 MHz, and 0123 previously showed clean link stats
+(FS=0xb, lost=0/0, sizeerr=0/0, DMA active=0x1) with POTF_ONLY=0/DMA_DATA_CTRL=0
+before ACPM DVFS boosted dout_cmu_csis_bus from 88.8 MHz to 533 MHz.
+
+Clear POTF_ONLY on CH0/CH1/CH3 and use DMA_DATA_CTRL=0 for real S5K2LD capture
+at 533 MHz, matching LineageOS non-VOTF WDMA configuration (csi->potf = false).
+
+Signed-off-by: Antigravity <antigravity@local>
+---
+diff --git a/drivers/media/platform/samsung/exynos990-csis.c b/drivers/media/platform/samsung/exynos990-csis.c
+index 111111111..222222222 100644
+--- a/drivers/media/platform/samsung/exynos990-csis.c
++++ b/drivers/media/platform/samsung/exynos990-csis.c
+@@ -226,13 +226,13 @@ static int exynos990_csis_link(struct exynos990_csis *csis, bool enable)
+ 			goto err_phy;
+ 		writel(BIT(31), csis->regs + CSIS_LRTE_CONFIG);
+ 		writel(BIT(23), csis->regs + CSIS_DBG_OPTION_SUITE);
+-		writel((2 << 12) | BIT(11) | (0x2B << 2), csis->regs + CSIS_ISP_CONFIG_CH0);
++		writel((2 << 12) | (0x2B << 2), csis->regs + CSIS_ISP_CONFIG_CH0);
+ 		writel((csis->pix.height << 16) | csis->pix.width,
+ 		       csis->regs + CSIS_ISP_RESOL_CH0);
+ 		/* The mode also sends VC1 PDAF and VC0 embedded data. */
+-		writel(BIT(16) | (2 << 12) | BIT(11) | (0x2b << 2), csis->regs + 0x0050);
++		writel(BIT(16) | (2 << 12) | (0x2b << 2), csis->regs + 0x0050);
+ 		writel((378 << 16) | 2016, csis->regs + 0x0054);
+-		writel((2 << 12) | BIT(11) | (0x12 << 2), csis->regs + 0x0070);
++		writel((2 << 12) | (0x12 << 2), csis->regs + 0x0070);
+ 		writel((2 << 16) | 2016, csis->regs + 0x0074);
+ 		writel(0xf, csis->regs + CSIS_UPD_SDW);
+ 		val = readl(csis->regs + CSIS_CMN_CTRL) | CSIS_CMN_CTRL_PHY_SEL_CPHY |
+@@ -385,7 +385,7 @@ static int exynos990_csis_start_streaming(struct vb2_queue *vq, unsigned int cou
+ 	writel(0x4, csis->dma_regs + DMA0_FMT); /* U10BIT_PACK */
+ 	writel(csis->pix.width, csis->dma_regs + DMA0_RESOL);
+ 	writel(0, csis->dma_cmn_regs + 0x001c); /* RAW10 OTF_FORMAT */
+-	writel(pattern ? 0 : 1, csis->dma_cmn_regs + DMA_DATA_CTRL);
++	writel(0, csis->dma_cmn_regs + DMA_DATA_CTRL); /* OTF input (potf=false) */
+ 	writel(readl(csis->dma_cmn_regs + DMA_INT_SRC), csis->dma_cmn_regs + DMA_INT_SRC);
+ 	spin_lock_irqsave(&csis->buf_lock, flags);
+ 	csis->dma_running = true;
