@@ -23,6 +23,14 @@ Pedido do proprietário: habilitar USB 3 (celular USB-C para notebook USB-A 3.0)
 4. **Teste em RAM**: `fastboot boot` com Wi-Fi/ssh como canal de controle (o USB pode cair). Critério: `current_speed = super-speed` com o notebook; depois a corrente de entrada.
 5. Só depois de passar: gravar na partição `boot`, com backup da atual.
 
+## Levantamento da etapa 1 (19/11/2026, observado)
+
+- **DT da Samsung para o PHY** (`exynos9830.dts`): quatro regiões de registradores: `0x10C00000` (0x200, controle USBCON: `COMBO_PMA_CTRL`, `LINK_CTRL`), `0x10AE0000` (0x2800, PHY combinado USB/DP) e `0x10AF0000` (0x800, PCS do combo), mais `0x10E00000` (o próprio controlador). `phy_version = 0x301`, `sub_phy_version = 0x400`, `pmu_offset = 0x72c`, `pmu_offset_dp = 0x704`, `phyclk_mux = "none"`, ref `ext_xtal`. O DT do r8s mapeia só `0x10C00000 0x50000`.
+- **Sequência SuperSpeed (`exynos_usbdrd_pipe3_init`)**: lê o gpio de orientação (`phy,gpio_phy_port`, gpm26-0, inverte se `reverse_phy_port`), grava `used_phy_port`, `phy_exynos_usb_v3p1_g2_pma_ready()`, `phy_exynos_usbdp_g2_v2_enable()`. O HS é um caminho separado (`utmi_init`: `usb_v3p1_enable` e `pipe_ovrd`), que o kernel atual já faz com código próprio.
+- **Arquivos a trazer**: `phy-exynos-usbdp-gen2-v2.{c,h}`, `-reg.h` (17,7 mil linhas), `-reg-pcs.h`, `phy-exynos-usb3p1.{c,h}`, `phy-exynos-usb3p1-reg.h`, `phy-samsung-usb-cal.h`. EOM e BIST do `usbdp` não são necessários. `sources/` não vai para o git: o código entra como patch da série (GPL-2.0, mesma licença do kernel).
+- **Kernel em execução**: sem `OF_OVERLAY`/`OF_CONFIGFS`, então mudar o DT exige um kernel novo (nada de teste a quente). PHY e dwc3 são built-in.
+- **Compilação**: `build-m1-kernel.sh` apaga e refaz `out/work/linux` e grava em `out/boot/`. A tarefa de áudio (`0144`) usa a mesma árvore; compilar o USB 3 ali desfaria o trabalho dela. Precisa de coordenação ou de um diretório de trabalho separado no script.
+
 ## Limites e riscos (honestidade sobre o ganho)
 
 - USB 3 permite declarar 900 mA: no melhor caso 4,5 W contra 2,5 W hoje. Cabo USB-A para USB-C sempre anuncia corrente padrão (Rp 56 kΩ).
