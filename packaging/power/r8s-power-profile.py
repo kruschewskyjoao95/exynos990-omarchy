@@ -18,18 +18,19 @@ BACKLIGHT = "/sys/class/backlight/panel0-backlight"
 CLUSTER_ORDER = ("policy0", "policy4", "policy6")        # little, mid, big (M5): little first
 SETTLE_S = 0.5
 
-# kHz, all in each cluster's table (scaling_available_frequencies); "balanced" is r8s-safe-freq's pin.
+# kHz, all in each cluster's table (scaling_available_frequencies): power-saver = the hardware minimum of each
+# cluster, performance = its maximum, balanced = the table value closest to the midpoint of the two.
 #
 # wifi_ps: Wi-Fi power save, measured at ~60-70 mA on this phone (-350 mA off, -287 mA on); on except Performance.
 # The thermal trip stays at r8s-thermal-trip's 70 C for every profile: moving it per profile left a cluster
 # stuck at its lowest frequency (the zone only releases 5 C below the trip), seen on the big cluster.
 PROFILES = {
     "power-saver": {"brightness": 30, "wifi_ps": True,
-                    "cpu": {"policy0": 806000, "policy4": 845000, "policy6": 858000}},
+                    "cpu": {"policy0": 442000, "policy4": 507000, "policy6": 546000}},
     "balanced": {"brightness": 50, "wifi_ps": True,
-                 "cpu": {"policy0": 1456000, "policy4": 1690000, "policy6": 1586000}},
+                 "cpu": {"policy0": 1157000, "policy4": 1586000, "policy6": 1274000}},
     "performance": {"brightness": 80, "wifi_ps": False,
-                    "cpu": {"policy0": 1846000, "policy4": 2210000, "policy6": 1794000}},
+                    "cpu": {"policy0": 2002000, "policy4": 2600000, "policy6": 2002000}},
 }
 
 

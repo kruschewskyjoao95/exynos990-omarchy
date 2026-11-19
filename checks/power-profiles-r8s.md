@@ -9,11 +9,11 @@ Testado no aparelho em 19/11/2026, kernel #18, sem flash. Origem: pedido do prop
 
   | Perfil | Brilho | cpu0-3 | cpu4-5 | cpu6-7 |
   |---|---|---|---|---|
-  | Economia | 30% | 806 MHz | 845 MHz | 858 MHz |
-  | Balanceado | 50% | 1456 MHz | 1690 MHz | 1586 MHz |
-  | Desempenho | 80% | 1846 MHz | 2210 MHz | 1794 MHz |
+  | Economia | 30% | 442 MHz (mínimo) | 507 MHz (mínimo) | 546 MHz (mínimo) |
+  | Balanceado | 50% | 1157 MHz | 1586 MHz | 1274 MHz |
+  | Desempenho | 80% | 2002 MHz (máximo) | 2600 MHz (máximo) | 2002 MHz (máximo) |
 
-  Balanceado é o ponto fixo de `r8s-safe-freq`.
+  Economia é o mínimo de cada grupo, Desempenho o máximo, Balanceado o valor da tabela mais próximo do meio (pedido do proprietário, 19/11/2026). Antes, Balanceado era o pin de `r8s-safe-freq` (1456 / 1690 / 1586 MHz).
 - Cada perfil também liga (Economia, Balanceado) ou desliga (Desempenho) a economia de energia do Wi-Fi com `iw ... set power_save`. O Omarchy força `wifi.powersave = 2` (desligada) no NetworkManager; `packaging/power/r8s-wifi-powersave.conf` entra como `zz-r8s-wifi-powersave.conf` com `1` (ignorar) para o serviço decidir.
 - Instalação: `packaging/power/install-power.sh` (root).
 
@@ -41,3 +41,10 @@ Testado no aparelho em 19/11/2026, kernel #18, sem flash. Origem: pedido do prop
   - `HZ=250` com `PREEMPT` completo: `PREEMPT_VOLUNTARY` e `HZ=100` poupam pouco; exigem compilar e testar o kernel.
   - GPU sem `devfreq` (clock fixo): nenhum perfil muda a GPU (`research/gpu-dvfs.md`).
   - O modem continua o maior consumo extra (~300 mA): faltam o sono do link PCIe e do CP.
+
+## CPU nos extremos (19/11/2026)
+
+- **Desempenho no máximo** tem risco documentado: o cluster M5 (cpu6/7) travou duas vezes em 04/09/2026, uma na transição para o teto de 2522 MHz e outra já limitado a 2002 MHz (`sources/port/device/r8s-safe-freq`). O pin fixo evita as transições que o ACPM atrasa (-110), mas o freio térmico em 70 °C as faz de novo. Se travar, reiniciar; voltar para Balanceado.
+- **Não validado nos extremos**: no teste o aparelho estava a 68-75 °C (carregando, com modem), com o freio térmico em estado máximo e as três CPUs forçadas ao mínimo, o que mascara qualquer valor de perfil. As escritas e a ausência de erros ACPM estão confirmadas (0 erros); a frequência real só aparece com o aparelho abaixo de ~65 °C.
+- Com as CPUs no piso e o modem parado por 4 minutos, a temperatura ficou em 68-69 °C: a CPU não era a fonte principal do calor naquele momento.
+- **GPU**: sem `devfreq`, fixa em 800 MHz (`panfrost: clock rate = 800000000`). O controle existe como opt-in no patch `0102` (`r8s_gpu_dvfs=1` na linha de comando e `set_khz` no debugfs, tabela 156...800 MHz) e **nunca foi testado no aparelho**.
