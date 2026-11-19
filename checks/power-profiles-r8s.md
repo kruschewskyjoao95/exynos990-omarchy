@@ -7,11 +7,11 @@ Testado no aparelho em 19/11/2026, kernel #18, sem flash. Origem: pedido do prop
 - `power-profiles-daemon` 0.30 (pacote `extra`) com o driver `fake` (`POWER_PROFILE_DAEMON_FAKE_DRIVER=1`). O kernel não tem `platform_profile` ACPI, e o driver `placeholder` só oferece dois perfis. O menu de bateria do Omarchy usa esse daemon.
 - `packaging/power/r8s-power-profile.py` (serviço `r8s-power-profile`, root) escuta o `ActiveProfile` no D-Bus e aplica:
 
-  | Perfil | Brilho | cpu0-3 | cpu4-5 | cpu6-7 |
-  |---|---|---|---|---|
-  | Economia | 30% | 442 MHz (mínimo) | 507 MHz (mínimo) | 546 MHz (mínimo) |
-  | Balanceado | 50% | 1157 MHz | 1586 MHz | 1274 MHz |
-  | Desempenho | 80% | 2002 MHz (máximo) | 2600 MHz (máximo) | 2002 MHz (máximo) |
+  | Perfil | Brilho | cpu0-3 | cpu4-5 | cpu6-7 | GPU (Mali-G77) |
+  |---|---|---|---|---|---|
+  | Economia | 30% | 442 MHz (mín.) | 507 MHz (mín.) | 546 MHz (mín.) | 156 MHz (mín., fixa) |
+  | Balanceado | 50% | 1157 MHz | 1586 MHz | 1274 MHz | 156 a 455 MHz |
+  | Desempenho | 80% | 2002 MHz (máx.) | 2600 MHz (máx.) | 2002 MHz (máx.) | 800 MHz (máx., fixa) |
 
   Economia é o mínimo de cada grupo, Desempenho o máximo, Balanceado o valor da tabela mais próximo do meio (pedido do proprietário, 19/11/2026). Antes, Balanceado era o pin de `r8s-safe-freq` (1456 / 1690 / 1586 MHz).
 - Cada perfil também liga (Economia, Balanceado) ou desliga (Desempenho) a economia de energia do Wi-Fi com `iw ... set power_save`. O Omarchy força `wifi.powersave = 2` (desligada) no NetworkManager; `packaging/power/r8s-wifi-powersave.conf` entra como `zz-r8s-wifi-powersave.conf` com `1` (ignorar) para o serviço decidir.
@@ -47,4 +47,11 @@ Testado no aparelho em 19/11/2026, kernel #18, sem flash. Origem: pedido do prop
 - **Desempenho no máximo** tem risco documentado: o cluster M5 (cpu6/7) travou duas vezes em 04/09/2026, uma na transição para o teto de 2522 MHz e outra já limitado a 2002 MHz (`sources/port/device/r8s-safe-freq`). O pin fixo evita as transições que o ACPM atrasa (-110), mas o freio térmico em 70 °C as faz de novo. Se travar, reiniciar; voltar para Balanceado.
 - **Não validado nos extremos**: no teste o aparelho estava a 68-75 °C (carregando, com modem), com o freio térmico em estado máximo e as três CPUs forçadas ao mínimo, o que mascara qualquer valor de perfil. As escritas e a ausência de erros ACPM estão confirmadas (0 erros); a frequência real só aparece com o aparelho abaixo de ~65 °C.
 - Com as CPUs no piso e o modem parado por 4 minutos, a temperatura ficou em 68-69 °C: a CPU não era a fonte principal do calor naquele momento.
-- **GPU**: sem `devfreq`, fixa em 800 MHz (`panfrost: clock rate = 800000000`). O controle existe como opt-in no patch `0102` (`r8s_gpu_dvfs=1` na linha de comando e `set_khz` no debugfs, tabela 156...800 MHz) e **nunca foi testado no aparelho**.
+- **GPU (atualização de 19/11/2026)**: ver a seção seguinte. O texto abaixo vale para o kernel instalado hoje, sem as opções de boot.
+- **GPU (kernel sem as opções)**: sem `devfreq`, fixa em 800 MHz (`panfrost: clock rate = 800000000`). O controle existe como opt-in no patch `0102` (`r8s_gpu_dvfs=1` na linha de comando e `set_khz` no debugfs, tabela 156...800 MHz) e **nunca foi testado no aparelho**.
+
+## GPU por perfil (19/11/2026, testado em RAM)
+
+- O serviço escreve os limites do devfreq do Panfrost (`/sys/class/devfreq/18500000.gpu/{min_freq,max_freq}`): Economia 156..156 MHz, Balanceado 156..455 MHz, Desempenho 800..800 MHz. A ordem é piso mínimo, teto e piso final, para a faixa nunca ficar vazia.
+- Medido sob carga (`glmark2` com o Mesa `mesa-g77`, `Mali-G77 MC11 (Panfrost)`): Economia 156 MHz; Balanceado 455 MHz (volta a 377 MHz ocioso, o `opp-suspend` da Samsung); Desempenho 800 MHz. Zero erros ACPM. As pontuações do `glmark2` (1036 a 1325) não distinguem os níveis: o teste é limitado pela CPU a partir de ~260 MHz.
+- **Só existe com as opções de boot** `r8s_gpu_dvfs=1` (linha de comando, no `bootargs` do DTB) e `panfrost.r8s_devfreq=1`, que o kernel instalado (#17) não tem. Neste kernel o serviço registra "no devfreq on this kernel, left alone" e segue. Para valer sempre, é preciso gravar uma imagem de boot com essas opções (escrita no telefone: só com ordem do proprietário, com backup).
