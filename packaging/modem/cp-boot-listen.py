@@ -42,6 +42,7 @@ w32(0, 0); w32(4, 0)
 for ht in (FMT_HT, RAW_HT):
     for i in range(4):
         w32(ht + i * 4, 0)
+w32(0x400, 0); w32(0x404, 0)        # init_ctrl_msg(): ap2cp/cp2ap messages cleared
 w32(0, MAGIC_BOOT); w32(4, 1)
 print("IPC preparado: magic=%#x access=%d cp2ap_msg=%#x" % (r32(0), r32(4), r32(0x404)))
 
@@ -50,6 +51,23 @@ open("/sys/bus/platform/devices/13d20000.pcie/relink", "w").write("1")
 db = mmap.mmap(fd, 0x1000, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE, offset=DOORBELL & ~0xfff)
 struct.pack_into("<I", db, DOORBELL & 0xfff, INT_PCIE_LINK_ACK)
 print("link up, doorbell pcie_link_ack enviado; observando 6 s")
+
+def raw_send_word(word):
+    # Same frame as Scion hakios.shannon.c boot_send() (MIT-0): {0xFC, 215, 8, 0, word LE} on the RAW TX queue.
+    frame = bytes([0xFC, 215, 8, 0]) + struct.pack("<I", word)
+    head = r32(RAW_HT)
+    for i, b in enumerate(frame):
+        ipc[RAW_BUF + (head + i) % RAW_TXQ] = b
+    w32(RAW_HT, (head + len(frame)) % RAW_TXQ)
+
+ASK = int(os.environ.get("ASK", "0"), 0)
+if ASK:
+    time.sleep(0.2)
+    raw_send_word(ASK)
+    # pcie_send_ap2cp_irq(): set_ctrl_msg(ap2cp_msg @0x400, mask2int(MASK_SEND_RAW)) then the doorbell.
+    w32(0x400, 0x80 | 0x01)
+    struct.pack_into("<I", db, DOORBELL & 0xfff, INT_AP2CP_MSG)
+    print("perguntado %#x na fila RAW TX + doorbell %d" % (ASK, INT_AP2CP_MSG))
 
 last, t0 = None, time.monotonic()
 while time.monotonic() - t0 < 6:
