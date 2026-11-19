@@ -1,0 +1,45 @@
+From: Antigravity <antigravity@local>
+Subject: [PATCH] media: r8s-camera: restore POTF_ONLY + parallel WDMA input with fixed DCPHY reset
+
+Testing 0123 confirmed that deasserting the DCPHY reset before writing C-PHY
+registers eliminated the spurious FS/size errors (FS=0xb, lost=0/0,
+sizeerr=0/0, DMA active=0x1). However, clearing POTF_ONLY/DMA_DATA_CTRL=0
+stalled on frame 1 (FE=0x0, ERR_OVER) because the downstream OTF consumer
+(PDP/3AA) is not powered/enabled.
+
+Restore POTF_ONLY (BIT(11)) on CH0/CH1/CH3 and DMA_DATA_CTRL=1 (parallel
+input path) while keeping the 0123 DCPHY reset fix, COMMON_DMA SW_RESET,
+and DMA_N_UPDT_PTR_EN.
+
+Signed-off-by: Antigravity <antigravity@local>
+---
+diff --git a/drivers/media/platform/samsung/exynos990-csis.c b/drivers/media/platform/samsung/exynos990-csis.c
+index 111111111..222222222 100644
+--- a/drivers/media/platform/samsung/exynos990-csis.c
++++ b/drivers/media/platform/samsung/exynos990-csis.c
+@@ -191,13 +191,13 @@ static int exynos990_csis_link(struct exynos990_csis *csis, bool enable)
+ 			goto err_phy;
+ 		writel(BIT(31), csis->regs + CSIS_LRTE_CONFIG);
+ 		writel(BIT(23), csis->regs + CSIS_DBG_OPTION_SUITE);
+-		writel((2 << 12) | (0x2B << 2), csis->regs + CSIS_ISP_CONFIG_CH0);
++		writel((2 << 12) | BIT(11) | (0x2B << 2), csis->regs + CSIS_ISP_CONFIG_CH0);
+ 		writel((csis->pix.height << 16) | csis->pix.width,
+ 		       csis->regs + CSIS_ISP_RESOL_CH0);
+ 		/* The mode also sends VC1 PDAF and VC0 embedded data. */
+-		writel(BIT(16) | (2 << 12) | (0x2b << 2), csis->regs + 0x0050);
++		writel(BIT(16) | (2 << 12) | BIT(11) | (0x2b << 2), csis->regs + 0x0050);
+ 		writel((378 << 16) | 2016, csis->regs + 0x0054);
+-		writel((2 << 12) | (0x12 << 2), csis->regs + 0x0070);
++		writel((2 << 12) | BIT(11) | (0x12 << 2), csis->regs + 0x0070);
+ 		writel((2 << 16) | 2016, csis->regs + 0x0074);
+ 		writel(0xf, csis->regs + CSIS_UPD_SDW);
+ 		val = readl(csis->regs + CSIS_CMN_CTRL) | CSIS_CMN_CTRL_PHY_SEL_CPHY |
+@@ -349,7 +349,7 @@ static int exynos990_csis_start_streaming(struct vb2_queue *vq, unsigned int cou
+ 	writel(0x4, csis->dma_regs + DMA0_FMT); /* U10BIT_PACK */
+ 	writel(csis->pix.width, csis->dma_regs + DMA0_RESOL);
+ 	writel(0, csis->dma_cmn_regs + 0x001c); /* RAW10 OTF_FORMAT */
+-	writel(0, csis->dma_cmn_regs + DMA_DATA_CTRL); /* OTF input (potf=false) */
++	writel(1, csis->dma_cmn_regs + DMA_DATA_CTRL); /* parallel input (POTF_ONLY) */
+ 	writel(readl(csis->dma_cmn_regs + DMA_INT_SRC), csis->dma_cmn_regs + DMA_INT_SRC);
+ 	spin_lock_irqsave(&csis->buf_lock, flags);
+ 	csis->dma_running = true;
