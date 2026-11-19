@@ -1,0 +1,15 @@
+[Unit]
+Description=r8s S5123 cellular modem (cbd boot + native Samsung IPC daemon)
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/bin/sh /usr/local/lib/r8s-modem/s5123-modem-run.sh
+# SIGTERM to the runner only: it tells the daemon to put the radio in low power, then powers the CP off
+KillMode=mixed
+TimeoutStopSec=20
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+{
+  "off": "Modem off",
+  "booting": "Modem starting",
+  "failed": "Modem failed to start",
+  "noSim": "No SIM card",
+  "searching": "Searching for network",
+  "noService": "No service",
+  "emergency": "Emergency calls only",
+  "registered": "%1 · %2 · %3 dBm",
+  "roaming": "%1 (roaming) · %2 · %3 dBm",
+  "stale": "Modem not responding"
+}

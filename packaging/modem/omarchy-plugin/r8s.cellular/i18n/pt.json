@@ -1,0 +1,12 @@
+{
+  "off": "Modem desligado",
+  "booting": "Ligando o modem",
+  "failed": "O modem não ligou",
+  "noSim": "Sem chip",
+  "searching": "Procurando rede",
+  "noService": "Sem serviço",
+  "emergency": "Só chamadas de emergência",
+  "registered": "%1 · %2 · %3 dBm",
+  "roaming": "%1 (roaming) · %2 · %3 dBm",
+  "stale": "O modem não responde"
+}

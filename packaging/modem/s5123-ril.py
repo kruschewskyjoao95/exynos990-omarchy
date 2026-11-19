@@ -25,6 +25,7 @@ MSG_VALID, MSG_CMD, MSG_DATA = 0x80, 0x40, 0x01
 LINK = {ch: i for i, (ch, *_) in enumerate(hs.CHANNELS)}       # SBD link id by channel
 N = len(hs.CHANNELS)
 T0 = time.monotonic()
+DEBUG = os.environ.get("R8S_DEBUG") == "1"      # per-poll link state in the log
 
 
 def log(*a):
@@ -334,7 +335,7 @@ class Data:
 
 
 class State:
-    sim = reg = reg_cs = reg_ps = tech = phone = pdp_state = ip4 = dns4 = None
+    sim = reg = reg_cs = reg_ps = tech = phone = pdp_state = ip4 = dns4 = hsdpa = None
     last_result = None
     oper = ""
     dbm = bars = None
@@ -368,8 +369,12 @@ def on_fmt(st, m):
             st.reg_ps = d[2]
         if d[1] in (2, 3) or st.reg is None:            # PS/CS domains; domain 0 is not a registration
             st.tech, st.reg = d[0], d[2]
-        log("<- REGISTRATION tech %d domain %d state %d (%s)" % (d[0], d[1], d[2], {1: "none", 2: "HOME",
-            3: "SEARCHING", 4: "EMERGENCY ONLY", 5: "unknown", 6: "ROAMING"}.get(d[2], "?")))
+        seen = getattr(st, "reg_seen", {})
+        if DEBUG or seen.get(d[1]) != (d[0], d[2]):    # the CP repeats these every few seconds
+            seen[d[1]] = (d[0], d[2])
+            st.reg_seen = seen
+            log("<- REGISTRATION tech %d domain %d state %d (%s)" % (d[0], d[1], d[2], {1: "none", 2: "HOME",
+                3: "SEARCHING", 4: "EMERGENCY ONLY", 5: "unknown", 6: "ROAMING"}.get(d[2], "?")))
     elif g == 0x08 and ix == 0x03:
         s = bytes(d)
         code = next((s[i:i + k].decode() for i in range(len(s)) for k in (6, 5)
@@ -381,7 +386,8 @@ def on_fmt(st, m):
             st.bars = d[1]
         elif ix == 6:
             st.dbm = -d[0]
-        log("<- SIGNAL %s bars=%s dbm=%s" % ("icon" if ix == 1 else "strength", st.bars, st.dbm))
+        if DEBUG:
+            log("<- SIGNAL %s bars=%s dbm=%s" % ("icon" if ix == 1 else "strength", st.bars, st.dbm))
     elif g == 0x0D and ix == 0x10 and len(d) >= 2:
         log("<- DATA CALL STATUS context %d status %d (%s) cause %#x [%s]" % (d[0], d[1], {0: "not enabled",
             1: "ENABLED", 3: "disabled"}.get(d[1], "?"), d[2] if len(d) > 2 else 0, d.hex()))
@@ -393,6 +399,8 @@ def on_fmt(st, m):
                 d[0], d[1], d[2], d[3], d[7]))
         else:
             log("<- DATA ADDRESS %s, %d B" % (kind, len(d)))
+    elif g == 0x0D and ix == 0x0C and d:
+        st.hsdpa = d[0]                                 # IPC_GPRS_HSDPA_STATUS: 0 none, 1 HSDPA, 2 HSPA+
     elif g == 0x0D and ix in (0x0C, 0x0F):
         log("<- DATA %02x %s, %d B: %s" % (ix, kind, len(d), d.hex()))
     elif g == 0x0D and ty == 2 and ix not in (0x06, 0x09):
@@ -456,9 +464,42 @@ class Rfs:
         log("<- RFS command %#x id %d, %d B: not answered" % (cmd, rid, ln))
 
 
+OPERATORS = {"72402": "TIM", "72403": "TIM", "72404": "TIM", "72405": "Claro", "72406": "Vivo",
+             "72410": "Vivo", "72411": "Vivo", "72423": "Vivo", "72431": "Oi"}
+STATUS = "/run/s5123/status.json"
+
+
+def rat(st):
+    """IPC_NET_ACCESS_TECHNOLOGY (libsamsung-ipc net.h): 0-1 GSM, 2 GPRS, 3 EDGE, 4 UMTS; others not mapped yet."""
+    if st.tech is None:
+        return ""
+    if st.tech <= 3:
+        return "2G"
+    if st.tech == 4:
+        return {1: "3G H", 2: "3G H+"}.get(st.hsdpa, "3G")
+    return "4G?%d" % st.tech                            # not seen yet: logged as is
+
+
+def write_status(st, data, modem):
+    import json
+    reg = {1: "none", 2: "home", 3: "searching", 4: "emergency", 5: "unknown", 6: "roaming"}.get(st.reg_cs or st.reg)
+    doc = {"modem": modem, "sim": {0x82: "ready", 0x83: "ready", 0x80: "absent"}.get(st.sim, "pending"),
+           "registration": reg or "none", "operator": OPERATORS.get(st.oper, st.oper or ""), "rat": rat(st),
+           "bars": st.bars if st.bars is not None else 0, "dbm": st.dbm, "data": bool(data),
+           "updated": int(time.time())}
+    os.makedirs(os.path.dirname(STATUS), exist_ok=True)
+    with open(STATUS + ".tmp", "w") as f:
+        json.dump(doc, f)
+    os.chmod(STATUS + ".tmp", 0o644)
+    os.replace(STATUS + ".tmp", STATUS)
+
+
 def main():
     nv_path = os.environ.get("R8S_NV", "/run/android-root/mnt/vendor/efs/nv_data.bin")
-    run_s = float(os.environ.get("R8S_RUN_S", "60"))
+    run_s = float(os.environ.get("R8S_RUN_S", "60")) or float("inf")   # 0: until SIGTERM (service)
+    import signal
+    stop = []
+    signal.signal(signal.SIGTERM, lambda *_: stop.append(1))
     nv = bytearray(open(nv_path, "rb").read())
     assert len(nv) == 1 << 20, "nv_data.bin should be 1 MiB"
     L, st = Link(), State()
@@ -498,11 +539,15 @@ def main():
     poll = float(os.environ.get("R8S_POLL_S", "2"))   # registration GET this often: a UL frame lets the CP flush
     next_poll = 5.0
     next_kick, shown_link, online = 0.0, False, False   # online: the CP has taken INIT_END (sent us a frame)
-    while time.monotonic() - t_up < run_s:
+    last_write = 0.0
+    while time.monotonic() - t_up < run_s and not stop:
+        if time.monotonic() - last_write > 2:
+            last_write = time.monotonic()
+            write_status(st, data, "online")
         wake.poll()
         msg = L.r32(hs.CP2AP)
         snap = (msg, L.r32(hs.AP2CP), L.r16(LINK[CH_FMT]), L.r16(N + LINK[CH_FMT]), L.r32(0), L.r32(4))
-        if snap != last_snap:
+        if snap != last_snap and DEBUG:
             log("cp2ap=%#x ap2cp=%#x FMT UL rp/wp=%d/%d magic=%#x access=%d" % snap)
             last_snap = snap
         if msg != last_msg:
@@ -592,6 +637,7 @@ def main():
             asked_normal = True
             L.fmt(0x01, 0x07, 0x01, b"\x02\x02")              # normal mode: the radio may register
         time.sleep(0.002)
+    write_status(st, None, "off")
     L.fmt(0x01, 0x07, 0x01, b"\x01\x00")                      # back to low power before power-off
     time.sleep(1)
     for ch, m in L.receive():

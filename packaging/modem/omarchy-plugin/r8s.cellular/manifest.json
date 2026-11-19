@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "r8s.cellular",
+  "name": "Cellular",
+  "version": "1.0.0",
+  "author": "r8s",
+  "description": "S5123 modem: operator, network type and signal, from /run/s5123/status.json",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "BarWidget.qml" },
+  "barWidget": { "displayName": "Cellular", "description": "Operator, 2G/3G/4G and signal of the phone modem", "category": "System", "allowMultiple": false, "defaultSection": "right" }
+}
